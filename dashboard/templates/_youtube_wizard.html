@@ -1,0 +1,53 @@
+<header class="hero">
+    <div class="row gap-3" style="margin-bottom: 8px;">
+        <span class="label">Authentication</span>
+    </div>
+    <h1 class="hero__title">YouTube</h1>
+</header>
+
+<div class="wizard">
+    <h2>Set up YouTube playback</h2>
+    <p>Right now <span class="mono">/watch</span> won't play videos. YouTube refuses to serve stream URLs to fetchproxies' source IPs (datacenter / VPN / residential proxy) — it returns "<em>Sign in to confirm you're not a bot</em>" instead. Pick one of the options below to authenticate companion as a real Google account; from then on the source IP no longer matters and you can drop the proxy chain.</p>
+
+    <div class="setup-grid">
+        <div class="setup-card">
+            <h3>Sign in with Google <span class="recommended">recommended</span></h3>
+            <p class="muted" style="font-family: var(--font-sans); font-size: 13px; margin: 0 0 var(--space-2);">One-time TV-style device authorization. Takes about a minute on your phone.</p>
+            <ul class="why">
+                <li>Refresh token stored on disk; survives reboots and redeploys.</li>
+                <li>Companion only requests YouTube playback scope — Google won't see anything beyond that.</li>
+                <li>You can use a throwaway Google account if you'd rather not link your primary one.</li>
+            </ul>
+            <form method="post" action="/api/youtube/oauth/start">
+                <button class="btn btn--primary" type="submit" style="width: 100%;">Start sign-in</button>
+            </form>
+        </div>
+
+        <div class="setup-card">
+            <h3>Paste browser cookies</h3>
+            <p class="muted" style="font-family: var(--font-sans); font-size: 13px; margin: 0 0 var(--space-2);">Fast if you're already signed into youtube.com here.</p>
+            <ul class="why">
+                <li>Cookies expire faster than OAuth — re-paste every few weeks.</li>
+                <li>Get invalidated when you sign out of YouTube anywhere or hit a Google security event.</li>
+                <li>Use this if Google won't issue OAuth for your account region.</li>
+            </ul>
+            <details style="margin: 0; border: 0; background: transparent;">
+                <summary style="padding: 0;">Show paste form</summary>
+                <form method="post" action="/api/youtube/cookies" style="margin-top: var(--space-3);">
+                    <div class="field">
+                        <label class="field__label" for="cookies-w">Cookie: header value</label>
+                        <textarea class="textarea" id="cookies-w" name="cookies" rows="3" placeholder="VISITOR_INFO1_LIVE=…; YSC=…; SID=…; HSID=…; SSID=…; APISID=…; SAPISID=…" style="font-size: 11px;"></textarea>
+                        <p class="field__hint">DevTools → Application → Cookies → youtube.com. The SID / HSID / SSID / SAPISID set is the important one.</p>
+                    </div>
+                    <button class="btn" type="submit">Save cookies</button>
+                </form>
+            </details>
+        </div>
+    </div>
+
+    <details style="margin-top: var(--space-4); border: 0; background: transparent;">
+        <summary style="padding: 0;">Why is this needed?</summary>
+        <p class="muted" style="font-family: var(--font-serif); font-size: 14px;">YouTube ties video stream URLs to a "Proof of Origin" (PO) token. Generating a valid PO from a headless environment used to work; YouTube has tightened bot detection and now datacenter / VPN / residential-proxy IPs (which is everything fetchproxies has — Mullvad, Bright Data) get a stub response with no playable formats.</p>
+        <p class="muted" style="font-family: var(--font-serif); font-size: 14px;">An authenticated session — Google OAuth refresh token, or full youtube.com cookies — sidesteps the PO requirement entirely. Once one is in place you can flip <em>egress</em> below to <span class="mono">direct</span> and stop routing through the proxy chain altogether.</p>
+    </details>
+</div>

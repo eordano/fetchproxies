@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}snapshots — fetchproxies{% endblock %}
+{% block content %}
+<main class="jobs-main">
+    <header class="jobs-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Archive queue</span>
+        </div>
+        <h1 class="jobs-hero__title">Snapshots</h1>
+        <p class="jobs-hero__sub">
+            Workers claim pending rows in priority order. State rolls up from per-extractor results — a snapshot is <em>partial</em> when at least one extractor failed but at least one succeeded.
+        </p>
+    </header>
+
+    <div class="jobs-toolbar">
+        <div class="jobs-tabs">
+            <a class="jobs-tab{% match filter %}{% when None %} is-active{% when Some with (_) %}{% endmatch %}" href="/jobs"><span>All</span><span class="jobs-tab__count">{{ counts.all }}</span></a>
+            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "queued" || s == "pending" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=pending"><span>Queued</span><span class="jobs-tab__count">{{ counts.queued }}</span></a>
+            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "running" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=running"><span>Running</span><span class="jobs-tab__count">{{ counts.running }}</span></a>
+            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "completed" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=completed"><span>Completed</span><span class="jobs-tab__count">{{ counts.completed }}</span></a>
+            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "partial" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=partial"><span>Partial</span><span class="jobs-tab__count">{{ counts.partial }}</span></a>
+            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "failed" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=failed"><span>Failed</span><span class="jobs-tab__count">{{ counts.failed }}</span></a>
+        </div>
+        <div class="jobs-toolbar__right">
+            <a class="btn btn--primary btn--sm" href="/jobs/new">
+                {% include "fragments/icons/plus.html" %} New snapshot
+            </a>
+        </div>
+    </div>
+
+    <form method="get" action="/jobs" class="jobs-filterbar">
+        {% match filter %}{% when Some with (s) %}<input type="hidden" name="state" value="{{ s }}">{% when None %}{% endmatch %}
+        {% match run_filter %}{% when Some with (rid) %}<input type="hidden" name="run" value="{{ rid }}">{% when None %}{% endmatch %}
+        <div class="jobs-input">
+            <span class="jobs-input__icon">{% include "fragments/icons/link.html" %}</span>
+            <input class="jobs-input__field" type="text" name="url" value="{{ url_filter }}" placeholder="URL contains…">
+        </div>
+        <div class="jobs-input">
+            <span class="jobs-input__icon">{% include "fragments/icons/tag.html" %}</span>
+            <input class="jobs-input__field" type="text" name="tag" value="{{ tag_filter }}" placeholder="Tag is…">
+        </div>
+        <select class="select" name="profile">
+            <option value="any" selected>Any profile</option>
+            <option value="full">full</option>
+            <option value="compare">compare</option>
+            <option value="lightweight">lightweight</option>
+            <option value="media">media</option>
+        </select>
+        <span class="muted sans" style="margin-left: auto; font-size: 13px;">
+            {{ snapshots.len() }} of {{ counts.all }} snapshots
+        </span>
+    </form>
+
+    <div class="jobs-table-wrap" hx-get="/fragments/job-table" hx-trigger="every 5s" hx-swap="innerHTML" hx-include="form[action='/jobs']">
+        {% include "fragments/job_table.html" %}
+    </div>
+
+    <footer class="jobs-foot">
+        <span class="muted sans">Live — new snapshots appear as workers claim them.</span>
+        <span class="flex-1"></span>
+        <a href="/api/v1/snapshots" class="muted sans">View as JSON →</a>
+    </footer>
+</main>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}run — fetchproxies{% endblock %}
+{% block content %}
+<main class="jobs-main">
+{% match run %}
+{% when Some with (r) %}
+    <div class="v2-crumbs">
+        <a href="/runs">all runs</a>
+        <span class="crumbs__sep">›</span>
+        <span>run #{{ r.id }}</span>
+    </div>
+
+    <header class="jobs-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Run #{{ r.id }}</span>
+            <span class="muted sans" style="font-size: 13px;">{{ snapshots.len() }} snapshot{% if snapshots.len() != 1 %}s{% endif %}</span>
+        </div>
+        <h1 class="jobs-hero__title">{% if r.tags.is_empty() %}Run #{{ r.id }}{% else %}{% for t in r.tags %}{% if !loop.first %} · {% endif %}{{ t }}{% endfor %}{% endif %}</h1>
+        <p class="jobs-hero__sub">
+            Created by <span class="mono">{{ r.created_by }}</span> on <span class="mono">{{ r.created_at.format("%Y-%m-%d %H:%M:%S") }}</span>.
+        </p>
+    </header>
+
+    <div class="actions-row" style="margin-bottom: var(--space-5);">
+        {% if has_retriable %}
+        <form method="post" action="/api/runs/{{ r.id }}/retry">
+            <button class="btn" type="submit">{% include "fragments/icons/refresh.html" %} Retry failed + skipped</button>
+        </form>
+        {% endif %}
+        {% if has_active %}
+        <form method="post" action="/api/runs/{{ r.id }}/cancel">
+            <button class="btn btn--ghost" type="submit">Cancel pending/running</button>
+        </form>
+        {% endif %}
+        <span class="flex-1"></span>
+        <form method="post" action="/api/runs/{{ r.id }}/delete" onsubmit="return confirm('Delete run #{{ r.id }} and all {{ snapshots.len() }} snapshots + their results + artifacts? This cascades.');">
+            <button class="btn btn--danger" type="submit">{% include "fragments/icons/trash.html" %} Delete run</button>
+        </form>
+    </div>
+
+    <div class="v2-section-head">
+        <div>
+            <h2 class="v2-section-head__title">Snapshots in this run</h2>
+        </div>
+    </div>
+
+    {% if snapshots.is_empty() %}
+    <div class="jobs-empty">No snapshots — they may have all been deleted individually.</div>
+    {% else %}
+    <div class="jobs-table-wrap">
+        <table class="tbl jobs-table">
+            <thead>
+                <tr>
+                    <th style="width: 60px;">ID</th>
+                    <th>URL</th>
+                    <th style="width: 130px;">State</th>
+                    <th style="width: 200px;">Tags</th>
+                    <th style="width: 56px; text-align: center;">Pri</th>
+                    <th style="width: 170px;">Created</th>
+                    <th style="width: 40px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in snapshots %}
+                <tr class="jobs-row" data-href="/jobs/{{ s.id }}">
+                    <td class="mono muted">#{{ s.id }}</td>
+                    <td><a class="jobs-url mono" href="/jobs/{{ s.id }}">{{ s.url }}</a></td>
+                    <td>
+                        {% if s.state == "running" %}
+                            <span class="pill pill--info"><span class="pill__dot pill__dot--pulse"></span>running</span>
+                        {% else if s.state == "completed" %}
+                            <span class="pill pill--success"><span class="pill__dot"></span>completed</span>
+                        {% else if s.state == "failed" %}
+                            <span class="pill pill--danger"><span class="pill__dot"></span>failed</span>
+                        {% else if s.state == "partial" %}
+                            <span class="pill pill--warning"><span class="pill__dot"></span>partial</span>
+                        {% else %}
+                            <span class="pill pill--neutral"><span class="pill__dot"></span>{{ s.state }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="jobs-tags">
+                            {% if s.tags.is_empty() %}
+                                <span class="muted">—</span>
+                            {% else %}
+                                {% for t in s.tags %}<a class="jobs-tag" href="/jobs?tag={{ t }}">{{ t }}</a>{% endfor %}
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="mono" style="text-align: center;">{{ s.priority }}</td>
+                    <td class="mono muted" style="font-size: 12.5px;">{{ s.created_at.format("%Y-%m-%d %H:%M:%S") }}</td>
+                    <td>
+                        <a class="btn btn--ghost btn--sm" href="/jobs/{{ s.id }}" aria-label="More">{% include "fragments/icons/more_h.html" %}</a>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+{% when None %}
+    <div class="v2-crumbs">
+        <a href="/runs">all runs</a>
+        <span class="crumbs__sep">›</span>
+        <span>not found</span>
+    </div>
+    <header class="jobs-hero">
+        <h1 class="jobs-hero__title">Run not found</h1>
+        <p class="jobs-hero__sub">ID may have been deleted, or never existed.</p>
+    </header>
+{% endmatch %}
+</main>
+{% endblock %}

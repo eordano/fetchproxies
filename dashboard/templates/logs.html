@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}logs — fetchproxies{% endblock %}
+{% block content %}
+<main class="logs-main">
+    <header class="logs-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Live stream</span>
+            <span class="logs-pulse" id="pulse">
+                <span class="logs-pulse__dot"></span>
+                <span class="mono">streaming</span>
+            </span>
+        </div>
+        <h1 class="logs-hero__title">Live logs</h1>
+        <p class="logs-hero__sub">
+            Every fetchproxies-related systemd unit — workers, schema/restore, frontends (nitter, redlib, kiwix, invidious, transmission), proxy chains, mullvad relays, brightdata relay, http→socks bridges, podman containers — parsed from <span class="mono">journalctl -o json --follow</span>. Filter by category to focus on a single chain.
+        </p>
+    </header>
+
+    <div class="logs-pills" id="pills">
+        <button type="button" class="logs-pill" data-cat="archiver"
+                title="Extractor traffic. mullvad rotation → bright-data fallback. listens :1083.">archiver</button>
+        <button type="button" class="logs-pill" data-cat="nitter"
+                title="Twitter API + scraping via nitter. tailscale-ams → mullvad. listens :1081.">nitter</button>
+        <button type="button" class="logs-pill" data-cat="redlib"
+                title="Reddit calls via redlib. mullvad-us / -de / -ch / -at rotation. listens :1082.">redlib</button>
+        <button type="button" class="logs-pill" data-cat="relays"
+                title="Per-mullvad-region SOCKS5 bound to wg-<region>. one per location.">relays</button>
+        <button type="button" class="logs-pill" data-cat="brightdata"
+                title="Bright-data SOCKS proxy (auth-injecting relay on :10819).">brightdata</button>
+        <button type="button" class="logs-pill" data-cat="bridges"
+                title="HTTP→SOCKS shims for nim/deno clients (nitter, invidious).">bridges</button>
+        <button type="button" class="logs-pill" data-cat="probe"
+                title="Hourly per-backend health probe (fetchproxies-proxy-probe).">probe</button>
+    </div>
+
+    <div class="logs-toolbar">
+        <button type="button" class="logs-toggle is-on" id="autoscroll">
+            <span class="logs-check">{% include "fragments/icons/check.html" %}</span>
+            Autoscroll
+        </button>
+        <button type="button" class="logs-toggle" id="paused">
+            <span class="logs-check"></span>
+            Pause
+        </button>
+        <button type="button" class="btn btn--ghost btn--sm" id="clear">
+            {% include "fragments/icons/x.html" %} Clear
+        </button>
+        <div class="jobs-input" style="flex: 1; max-width: 320px;">
+            <span class="jobs-input__icon">{% include "fragments/icons/activity.html" %}</span>
+            <input class="jobs-input__field" type="text" id="filter" placeholder="Filter (substring of unit or message)…">
+        </div>
+        <span class="flex-1"></span>
+        <span class="muted sans" id="stats" style="font-size: 13px;"></span>
+    </div>
+
+    <div id="stream" class="logs-stream">
+        <div class="stream-empty" id="empty">waiting for events…</div>
+        <div class="logs-row logs-row--ghost" id="cursor-row">
+            <span class="logs-cursor"></span>
+        </div>
+    </div>
+
+    <script>
+    {% include "fragments/log_stream.html" %}
+    new LogStream({
+        url: '/logs/stream',
+        container: document.getElementById('stream'),
+        autoscrollBtn: document.getElementById('autoscroll'),
+        pausedBtn: document.getElementById('paused'),
+        pulse: document.getElementById('pulse'),
+        clearBtn: document.getElementById('clear'),
+        stats: document.getElementById('stats'),
+        empty: document.getElementById('empty'),
+        filterInput: document.getElementById('filter'),
+        pills: document.getElementById('pills'),
+        cursor: document.getElementById('cursor-row'),
+    });
+    function wireCheck(id) {
+        const btn = document.getElementById(id);
+        const ic = btn.querySelector('.logs-check');
+        const sync = () => { ic.style.opacity = btn.classList.contains('is-on') ? '1' : '0'; };
+        new MutationObserver(sync).observe(btn, { attributes: true, attributeFilter: ['class'] });
+        sync();
+    }
+    wireCheck('autoscroll');
+    wireCheck('paused');
+    </script>
+</main>
+{% endblock %}

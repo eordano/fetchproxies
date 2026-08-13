@@ -1,0 +1,376 @@
+// Shared log-stream component for /logs and /proxy-log. Reads SSE
+// events whose data is `{ts_us, unit, level, msg, gost}` JSON, renders
+// rows that match design/page-logs.jsx exactly:
+//
+//   <div class="logs-row logs-row--<level>">
+//     <span class="logs-time mono">HH:MM:SS</span>
+//     <span class="logs-unit logs-unit--<class>">UNIT</span>
+//     <span class="logs-proto mono">socks5|task|exec|warn|…</span>
+//     <span class="logs-msg mono">
+//       <span class="logs-msg__from">…</span>
+//       <span class="logs-msg__op">…</span>
+//       <span class="logs-msg__to">…</span>
+//     </span>
+//   </div>
+//
+// Plus a trailing `<div class="logs-row logs-row--ghost"><span class="logs-cursor"/></div>`
+// — pinned to the bottom of the stream so the operator always has a
+// blink to anchor on.
+//
+// Toolbar buttons (Autoscroll / Pause) follow the design's
+// `<button class="logs-toggle is-on"><span class="logs-check">{IconCheck}</span> Label</button>`
+// shape, not a native <input type=checkbox>. Filename intentionally
+// `.html` (not `.js`) so askama's template loader picks it up.
+
+class LogStream {
+    constructor(opts) {
+        this.MAX_ROWS = 1000;
+        this.url = opts.url;
+        this.container = opts.container;
+        this.autoscrollBtn = opts.autoscrollBtn;
+        this.pausedBtn = opts.pausedBtn;
+        this.pulse = opts.pulse;            // .logs-pulse element (toggles .is-paused)
+        this.stats = opts.stats;
+        this.empty = opts.empty;
+        this.filterInput = opts.filterInput || null;
+        this.pillsEl = opts.pills || null;
+        this.cursor = opts.cursor || null;  // .logs-row--ghost row that hosts .logs-cursor
+        this.buffer = [];
+        this.received = 0;
+        this.dropped = 0;
+        this.frameScheduled = false;
+        this.activeCats = new Set();
+        this.autoscroll = true;
+        this.paused = false;
+
+        if (this.autoscrollBtn) {
+            this.autoscrollBtn.classList.toggle('is-on', this.autoscroll);
+            this.autoscrollBtn.addEventListener('click', () => this.toggleAutoscroll());
+        }
+        if (this.pausedBtn) {
+            this.pausedBtn.classList.toggle('is-on', this.paused);
+            this.pausedBtn.addEventListener('click', () => this.togglePause());
+        }
+        if (opts.clearBtn) opts.clearBtn.addEventListener('click', () => this.clear());
+        if (this.filterInput) this.filterInput.addEventListener('input', () => this.applyFilter());
+        if (this.pillsEl) {
+            for (const btn of this.pillsEl.querySelectorAll('.logs-pill')) {
+                btn.addEventListener('click', () => this.togglePill(btn));
+            }
+        }
+
+        const source = new EventSource(this.url);
+        source.onmessage = (e) => this.onMessage(e);
+        source.onerror = () => this.updateStats();
+    }
+
+    // --- toggle handlers ---
+
+    toggleAutoscroll() {
+        this.autoscroll = !this.autoscroll;
+        this.autoscrollBtn.classList.toggle('is-on', this.autoscroll);
+    }
+    togglePause() {
+        this.paused = !this.paused;
+        this.pausedBtn.classList.toggle('is-on', this.paused);
+        if (this.pulse) {
+            this.pulse.classList.toggle('is-paused', this.paused);
+            const txt = this.pulse.querySelector('.mono');
+            if (txt) txt.textContent = this.paused ? 'paused' : 'streaming';
+        }
+        if (!this.paused) {
+            // Drain buffer that accumulated while paused.
+            if (!this.frameScheduled) {
+                this.frameScheduled = true;
+                requestAnimationFrame(() => this.flush());
+            }
+        }
+    }
+
+    // --- category matching for /proxy-log pills ---
+
+    static unitInCat(unit, cat) {
+        const u = unit || '';
+        switch (cat) {
+            case 'archiver':   return u.startsWith('proxy-chain-archiver');
+            case 'nitter':     return u.startsWith('proxy-chain-nitter') || u.startsWith('nitter-mint') || u === 'nitter';
+            case 'redlib':     return u.startsWith('proxy-chain-redlib') || u.startsWith('redlib-probe') || u === 'redlib';
+            case 'relays':     return u.startsWith('proxy-wg-relay-') || u.startsWith('mullvad-relay-') || u.startsWith('mullvad-extract-') || u.startsWith('fetchproxies-tailscale');
+            case 'brightdata': return u.startsWith('brightdata-relay');
+            case 'bridges':    return u.endsWith('-http-bridge');
+            case 'probe':      return u.startsWith('fetchproxies-proxy-probe');
+            default:           return false;
+        }
+    }
+
+    togglePill(btn) {
+        const cat = btn.dataset.cat;
+        if (this.activeCats.has(cat)) {
+            this.activeCats.delete(cat);
+            btn.classList.remove('active');
+        } else {
+            this.activeCats.add(cat);
+            btn.classList.add('active');
+        }
+        this.applyFilter();
+    }
+
+    eventPasses(evt) {
+        if (this.activeCats.size > 0) {
+            let any = false;
+            for (const c of this.activeCats) {
+                if (LogStream.unitInCat(evt.unit || '', c)) { any = true; break; }
+            }
+            if (!any) return false;
+        }
+        if (this.filterInput) {
+            const q = (this.filterInput.value || '').toLowerCase();
+            if (q) {
+                const hit = (evt.unit || '').toLowerCase().includes(q)
+                    || (evt.msg || '').toLowerCase().includes(q);
+                if (!hit) return false;
+            }
+        }
+        return true;
+    }
+
+    // --- SSE intake ---
+
+    onMessage(e) {
+        this.received++;
+        let evt;
+        try { evt = JSON.parse(e.data); }
+        catch { return; }
+        this.buffer.push(evt);
+        if (this.buffer.length > this.MAX_ROWS * 2) {
+            this.dropped += this.buffer.length - this.MAX_ROWS;
+            this.buffer.splice(0, this.buffer.length - this.MAX_ROWS);
+        }
+        if (!this.frameScheduled) {
+            this.frameScheduled = true;
+            requestAnimationFrame(() => this.flush());
+        }
+    }
+
+    flush() {
+        this.frameScheduled = false;
+        if (this.paused || this.buffer.length === 0) {
+            this.updateStats();
+            return;
+        }
+        if (this.empty && this.empty.parentNode) this.empty.remove();
+
+        const frag = document.createDocumentFragment();
+        for (const evt of this.buffer) {
+            const row = this.renderRow(evt);
+            if (!this.eventPasses(evt)) row.style.display = 'none';
+            frag.appendChild(row);
+        }
+        this.buffer = [];
+
+        // Cursor row (if present) stays at the bottom — insert before it.
+        if (this.cursor && this.cursor.parentNode === this.container) {
+            this.container.insertBefore(frag, this.cursor);
+        } else {
+            this.container.appendChild(frag);
+        }
+
+        // Cap DOM size from the top, ignoring the cursor ghost.
+        const cap = this.MAX_ROWS + (this.cursor ? 1 : 0);
+        while (this.container.children.length > cap) {
+            const first = this.container.firstChild;
+            if (first === this.cursor) break;
+            this.container.removeChild(first);
+        }
+        if (this.autoscroll) {
+            this.container.scrollTop = this.container.scrollHeight;
+        }
+        this.updateStats();
+    }
+
+    // --- rendering ---
+
+    renderRow(evt) {
+        const lvl = parseInt(evt.level || '6', 10);
+        const levelClass =
+            lvl <= 3 ? 'err' :
+            lvl === 4 ? 'warn' :
+            lvl === 5 ? 'info' :
+            'trace';
+
+        const row = document.createElement('div');
+        row.className = `logs-row logs-row--${levelClass}`;
+        row.dataset.unit = evt.unit || '';
+        row.dataset.msg = evt.msg || '';
+
+        const t = document.createElement('span');
+        t.className = 'logs-time mono';
+        t.textContent = this.formatTs(evt.ts_us);
+        row.appendChild(t);
+
+        const u = document.createElement('span');
+        u.className = `logs-unit logs-unit--${LogStream.unitClass(evt.unit || '')}`;
+        u.textContent = LogStream.shortUnit(evt.unit || '?');
+        u.title = evt.unit || '';
+        row.appendChild(u);
+
+        const proto = document.createElement('span');
+        proto.className = 'logs-proto mono';
+        proto.textContent = LogStream.protoFor(evt);
+        row.appendChild(proto);
+
+        const m = document.createElement('span');
+        m.className = 'logs-msg mono';
+        LogStream.fillMessage(m, evt);
+        row.appendChild(m);
+
+        return row;
+    }
+
+    static fillMessage(target, evt) {
+        // Try to parse a SOCKS-style event into from / op / to spans.
+        // gost's pattern: "127.0.0.1:43332 ><  www.reddit.com:443" or
+        // similar. When we can't parse, drop the whole text into __to
+        // so it still inherits the per-level colour.
+        if (evt.gost && typeof evt.gost === 'object') {
+            const handler = evt.gost.handler || evt.gost.kind || '';
+            const inner = evt.gost.msg || '';
+            if (handler) {
+                const h = document.createElement('span');
+                h.className = 'logs-msg__from';
+                h.textContent = handler;
+                target.appendChild(h);
+                target.appendChild(document.createTextNode(' '));
+            }
+            const to = document.createElement('span');
+            to.className = 'logs-msg__to';
+            to.textContent = inner;
+            target.appendChild(to);
+            return;
+        }
+        const parsed = LogStream.parseSocksLine(evt.msg || '');
+        if (parsed) {
+            const from = document.createElement('span');
+            from.className = 'logs-msg__from';
+            from.textContent = parsed.from;
+            target.appendChild(from);
+            const op = document.createElement('span');
+            op.className = 'logs-msg__op';
+            op.textContent = ` ${parsed.op} `;
+            target.appendChild(op);
+            const to = document.createElement('span');
+            to.className = 'logs-msg__to';
+            to.textContent = parsed.to;
+            target.appendChild(to);
+        } else {
+            const to = document.createElement('span');
+            to.className = 'logs-msg__to';
+            to.textContent = evt.msg || '';
+            target.appendChild(to);
+        }
+    }
+
+    /// Crude split for gost's `<addr> ><  <addr>` shape — picks any of
+    /// `>—<`, `>-<`, `><`, `→`, `↔` as the operator and slices the
+    /// remaining bits. Returns null when nothing matches so the caller
+    /// can fall back to the plain-text path.
+    static parseSocksLine(s) {
+        const re = /^(\S+:\d+)\s+(>—<|>-<|><|↔|→|<-)\s+(\S+:\d+)/;
+        const m = s.match(re);
+        if (!m) return null;
+        return { from: m[1], op: m[2], to: m[3] };
+    }
+
+    /// Map a unit name to the design's logs-unit-- modifier:
+    ///   mullvad / worker / monolith / probe / default.
+    static unitClass(u) {
+        if (u.startsWith('proxy-chain-archiver')) return 'worker';
+        if (u.startsWith('proxy-chain-nitter')) return 'mullvad';
+        if (u.startsWith('proxy-chain-redlib')) return 'mullvad';
+        if (u.startsWith('proxy-chain')) return 'mullvad';
+        if (u.startsWith('proxy-wg-relay-')) return 'mullvad';
+        if (u.startsWith('mullvad-relay-')) return 'mullvad';
+        if (u.startsWith('mullvad-extract-')) return 'mullvad';
+        if (u.startsWith('brightdata')) return 'mullvad';
+        if (u === 'monolith' || u.startsWith('monolith')) return 'monolith';
+        if (u.startsWith('fetchproxies-worker')) return 'worker';
+        if (u.startsWith('fetchproxies-proxy-probe')) return 'probe';
+        if (u.startsWith('fetchproxies-tailscale')) return 'mullvad';
+        if (u.startsWith('fetchproxies-')) return 'worker';
+        if (u.startsWith('nitter')) return 'mullvad';
+        if (u.startsWith('redlib')) return 'mullvad';
+        return 'default';
+    }
+
+    /// Derive a short proto/category string for the third column.
+    static protoFor(evt) {
+        const u = evt.unit || '';
+        const lvl = parseInt(evt.level || '6', 10);
+        if (evt.gost && evt.gost.handler) return evt.gost.handler;
+        if (lvl <= 3) return 'err';
+        if (lvl === 4) return 'warn';
+        if (u.startsWith('proxy-chain') || u.startsWith('proxy-wg-relay-')
+            || u.startsWith('mullvad-') || u.startsWith('brightdata')) return 'socks5';
+        if (u.startsWith('fetchproxies-worker')) return 'task';
+        if (u.startsWith('fetchproxies-proxy-probe')) return 'warn';
+        if (u === 'monolith' || u.startsWith('monolith')) return 'exec';
+        return 'info';
+    }
+
+    static shortUnit(u) {
+        return u.replace(/\.service$/, '').replace(/^fetchproxies-/, 'fp-');
+    }
+
+    formatTs(us) {
+        if (!us) return '--:--:--';
+        const d = new Date(us / 1000);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        return `${hh}:${mm}:${ss}`;
+    }
+
+    // --- filter (re-evaluates already-rendered rows in place) ---
+
+    applyFilter() {
+        let visible = 0;
+        for (const row of this.container.children) {
+            if (!row.classList || !row.classList.contains('logs-row')) continue;
+            if (row.classList.contains('logs-row--ghost')) continue;
+            const evt = { unit: row.dataset.unit || '', msg: row.dataset.msg || '' };
+            const show = this.eventPasses(evt);
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        }
+        this.updateStats(visible);
+    }
+
+    // --- ops ---
+
+    clear() {
+        // Keep the ghost cursor row; remove everything else.
+        const keep = this.cursor;
+        this.container.innerHTML = '';
+        if (this.empty) this.container.appendChild(this.empty);
+        if (keep) this.container.appendChild(keep);
+        this.received = 0;
+        this.dropped = 0;
+        this.updateStats(0);
+    }
+
+    updateStats(visibleOverride) {
+        if (!this.stats) return;
+        const visible = (visibleOverride === undefined)
+            ? this.container.querySelectorAll('.logs-row:not(.logs-row--ghost):not([style*="display: none"])').length
+            : visibleOverride;
+        let s = `received `;
+        const n = document.createElement('span');
+        n.className = 'mono';
+        n.textContent = this.received;
+        // Build the stats line as text so the render stays cheap; the
+        // design renders it as `received <span class="mono">N</span> · buffer <span class="mono">2 MB</span>`.
+        this.stats.textContent = `received ${this.received}`
+            + (this.dropped > 0 ? ` · dropped ${this.dropped}` : '')
+            + (visible !== this.received ? ` · shown ${visible}` : '');
+    }
+}

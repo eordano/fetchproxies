@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}nitter — fetchproxies{% endblock %}
+{% block content %}
+<div class="page-main">
+    <header class="hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Session mint</span>
+        </div>
+        <h1 class="hero__title">Nitter session mint</h1>
+        <p class="hero__sub">
+            Harvests <span class="mono">auth_token</span> + <span class="mono">ct0</span> cookies via Bright Data scraping browser, writes JSONL to <span class="mono">/srv/archive/config/nitter-sessions.jsonl</span>. Nitter restarts on file change.
+        </p>
+    </header>
+
+    <div class="v2-section-head">
+        <div>
+            <h2 class="v2-section-head__title">Egress mode</h2>
+            <p class="v2-section-head__sub">Where nitter's outbound Twitter traffic exits. Once a working session JSONL is in place, the source IP no longer matters — Twitter trusts the session cookie. Switch to <span class="mono">direct</span> to bypass the proxy chain (and the tailscale exit hop) and exit through the host's NAT gateway.</p>
+        </div>
+    </div>
+    <form method="post" action="/api/services/nitter/egress" class="actions-row">
+        <select class="select" name="mode">
+            {% match egress %}
+            {% when Some with (e) %}
+                <option value="proxy_chain"{% if e.mode == "proxy_chain" %} selected{% endif %}>proxy_chain (mullvad/tailscale-ams)</option>
+                <option value="direct"{% if e.mode == "direct" %} selected{% endif %}>direct (host WAN)</option>
+            {% when None %}
+                <option value="proxy_chain" selected>proxy_chain (mullvad/tailscale-ams)</option>
+                <option value="direct">direct (host WAN)</option>
+            {% endmatch %}
+        </select>
+        <button class="btn" type="submit">Save</button>
+        {% match egress %}{% when Some with (e) %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at.format("%Y-%m-%d %H:%M:%S") }}{% match e.reason %}{% when Some with (r) %} — <em>{{ r }}</em>{% when None %}{% endmatch %}</span>{% when None %}{% endmatch %}
+    </form>
+    <p class="field__hint" style="margin-top: var(--space-2);">Stored in DB, applied on next nitter restart. Per-service live restart is on the roadmap.</p>
+
+    <div class="v2-section-head">
+        <div>
+            <h2 class="v2-section-head__title">Last mint</h2>
+        </div>
+    </div>
+    {% match status %}
+    {% when Some with (s) %}
+    <div class="card" style="padding: var(--space-4); max-width: 720px;">
+        <dl class="keyfacts">
+            <dt>Last attempt</dt>
+            <dd class="mono">{% match s.last_attempt_at %}{% when Some with (t) %}{{ t.format("%Y-%m-%d %H:%M:%S") }}{% when None %}—{% endmatch %}</dd>
+            <dt>Last success</dt>
+            <dd class="mono">{% match s.last_success_at %}{% when Some with (t) %}{{ t.format("%Y-%m-%d %H:%M:%S") }}{% when None %}—{% endmatch %}</dd>
+            <dt>Source</dt>
+            <dd>{% match s.last_source %}{% when Some with (v) %}<span class="mono">{{ v }}</span>{% when None %}—{% endmatch %}</dd>
+            <dt>Updated</dt>
+            <dd class="mono muted">{{ s.updated_at.format("%Y-%m-%d %H:%M:%S") }}</dd>
+            {% match s.last_error %}
+            {% when Some with (err) %}
+            <dt>Last error</dt>
+            <dd style="color: var(--color-danger-strong);">{{ err }}</dd>
+            {% when None %}
+            {% endmatch %}
+        </dl>
+    </div>
+    {% when None %}
+    <div class="empty">No mint attempts recorded — the timer fires every 24h or on a forced trigger.</div>
+    {% endmatch %}
+
+    <form method="post" action="/api/nitter/trigger" class="actions-row" style="margin-top: var(--space-4);">
+        <button class="btn" type="submit">{% include "fragments/icons/refresh.html" %} Force mint now</button>
+        <span class="muted" style="font-family: var(--font-sans); font-size: 13px;">touches <span class="mono">{{ trigger_path }}</span> — bypasses the 24h cooldown.</span>
+    </form>
+
+    <div class="v2-section-head">
+        <div>
+            <h2 class="v2-section-head__title">Credentials source</h2>
+        </div>
+    </div>
+    {% match override_row %}
+    {% when Some with (o) %}
+    <div class="card" style="padding: var(--space-4); max-width: 720px; margin-bottom: var(--space-4);">
+        <dl class="keyfacts">
+            <dt>Decision</dt>
+            <dd><span class="mono">{{ o.env_decision }}</span></dd>
+            <dt>Username</dt>
+            <dd class="mono">{% match o.username %}{% when Some with (u) %}{{ u }}{% when None %}—{% endmatch %}</dd>
+            <dt>Password</dt>
+            <dd class="muted">{% match o.password %}{% when Some with (p) %}{% if !p.is_empty() %}stored ({{ p.len() }} chars){% else %}—{% endif %}{% when None %}—{% endmatch %}</dd>
+            <dt>TOTP</dt>
+            <dd class="muted">{% match o.totp_secret %}{% when Some with (t) %}{% if !t.is_empty() %}stored{% else %}—{% endif %}{% when None %}—{% endmatch %}</dd>
+            <dt>Decided at</dt>
+            <dd class="mono muted">{{ o.decided_at.format("%Y-%m-%d %H:%M:%S") }}</dd>
+        </dl>
+    </div>
+    <form method="post" action="/api/nitter/override" style="margin-bottom: var(--space-5);">
+        <input type="hidden" name="action" value="clear">
+        <button class="btn btn--danger" type="submit">{% include "fragments/icons/trash.html" %} Clear override (fall back to agenix env)</button>
+    </form>
+    {% when None %}
+    <p class="muted" style="font-family: var(--font-sans); font-size: 13px;">No dashboard override — mint reads <span class="mono">/var/lib/fp-secrets/nitter-session-login-env</span> (agenix-decrypted).</p>
+    {% endmatch %}
+
+    <details style="max-width: 720px;">
+        <summary>Set / replace override</summary>
+        <p class="muted" style="font-family: var(--font-sans); font-size: 13px;">Replaces the env-file creds. Mint will retry next time the timer fires; click <em>force mint</em> above to test immediately.</p>
+        <form method="post" action="/api/nitter/override">
+            <input type="hidden" name="action" value="save">
+
+            <div class="field">
+                <label class="field__label" for="n-user">Twitter username (or email)</label>
+                <input class="input" type="text" id="n-user" name="username" autocomplete="off" placeholder="@handle or email">
+            </div>
+
+            <div class="field">
+                <label class="field__label" for="n-pass">Password</label>
+                <input class="input" type="password" id="n-pass" name="password" autocomplete="new-password">
+            </div>
+
+            <div class="field">
+                <label class="field__label" for="n-totp">TOTP shared-secret (base32)</label>
+                <input class="input" type="text" id="n-totp" name="totp_secret" autocomplete="off" placeholder="JBSWY3DPEHPK3PXP — empty to skip">
+                <p class="field__hint">Base32 secret from twitter's "set up an authentication app" QR code (decode the otpauth:// URI). Used to compute the 6-digit TOTP at login time.</p>
+            </div>
+
+            <button class="btn btn--primary" type="submit">Save override</button>
+        </form>
+    </details>
+</div>
+{% endblock %}

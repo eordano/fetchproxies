@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-05-01T23:11:28Z",
+  "target_url": "https://www.reddit.com/r/programming/top/?t=week",
+  "backends": {
+    "us-sjc":     { "port": 10818, "status": "ok",      "http_code": 200, "latency_ms": 1146, "checked_at": "2026-05-01T23:11:28Z" },
+    "br-all":     { "port": 10812, "status": "ok",      "http_code": 200, "latency_ms": 1337, "checked_at": "2026-05-01T23:11:28Z" },
+    "us-mia":     { "port": 10817, "status": "ok",      "http_code": 200, "latency_ms": 1378, "checked_at": "2026-05-01T23:11:28Z" },
+    "at-vie":     { "port": 10811, "status": "ok",      "http_code": 200, "latency_ms": 1505, "checked_at": "2026-05-01T23:11:28Z" },
+    "ar-bue":     { "port": 10810, "status": "timeout", "http_code": null, "latency_ms": null, "checked_at": "2026-04-30T19:19:06Z" },
+    "de-dus":     { "port": 10815, "status": "ok",      "http_code": 200, "latency_ms": 1538, "checked_at": "2026-05-01T23:11:28Z" },
+    "us-bos":     { "port": 10816, "status": "ok",      "http_code": 200, "latency_ms": 1584, "checked_at": "2026-05-01T23:11:28Z" },
+    "co-bog":     { "port": 10814, "status": "blocked", "http_code": 403, "latency_ms": 1728, "checked_at": "2026-05-01T23:11:28Z" },
+    "ch-zrh":     { "port": 10813, "status": "ok",      "http_code": 200, "latency_ms": 1867, "checked_at": "2026-05-01T23:11:28Z" },
+    "brightdata": { "port": 10819, "status": "ok",      "http_code": 200, "latency_ms":  412, "checked_at": "2026-05-01T23:11:28Z" }
+  }
+}

@@ -1,0 +1,284 @@
+/* ============================================================
+   Fetchproxies — shared styles for all variations
+   Built on LocalRock tokens (tokens.css)
+   ============================================================ */
+
+html { background: var(--color-background); }
+body { font-family: var(--font-serif); }
+
+/* Reset some token defaults that don't fit a tool UI */
+p { max-width: none; margin: 0; }
+
+/* ---------- App chrome ---------- */
+.app {
+  min-height: 100vh;
+  background: var(--color-background);
+  color: var(--color-fg-primary);
+}
+
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-divider);
+  background: var(--color-background);
+}
+.appbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-fg-emphasis);
+  letter-spacing: -0.01em;
+}
+.appbar__brand-mark {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--color-fg-emphasis);
+}
+.appbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--space-3);
+  flex: 1;
+}
+.appbar__nav a {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-fg-secondary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.appbar__nav a:hover { color: var(--color-fg-primary); background: var(--color-tile); text-decoration: none; }
+.appbar__nav a.is-active { color: var(--color-fg-emphasis); background: var(--color-tile); }
+.appbar__sep {
+  width: 1px; height: 16px; background: var(--color-divider);
+  margin: 0 var(--space-2);
+}
+.appbar__right { display: flex; align-items: center; gap: var(--space-3); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: var(--color-fg-primary);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  white-space: nowrap;
+}
+.btn:hover { background: var(--color-tile); }
+.btn:active { background: var(--color-surface-sunken); }
+.btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-background);
+}
+.btn--primary:hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-fg-secondary);
+}
+.btn--ghost:hover { color: var(--color-fg-primary); background: var(--color-tile); }
+.btn--danger {
+  color: var(--color-danger-strong);
+  border-color: var(--color-border);
+}
+.btn--danger:hover { background: rgba(196, 114, 114, 0.1); border-color: var(--color-danger-strong); }
+.btn--sm { padding: 6px 10px; font-size: 12px; }
+.btn--lg { padding: 10px 16px; font-size: 14px; }
+.btn .icon { width: 14px; height: 14px; }
+
+/* ---------- Selects ---------- */
+.select {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 8px 28px 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-sunken);
+  color: var(--color-fg-primary);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239B9590' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+[data-theme="light"] .select {
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23645C55' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* ---------- Status pill ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.pill--success { color: var(--color-success); }
+.pill--warning { color: var(--color-warning); }
+.pill--danger  { color: var(--color-danger-strong); }
+.pill--info    { color: var(--color-info); }
+.pill--neutral { color: var(--color-fg-secondary); }
+.pill__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+}
+
+/* ---------- Crumb trail ---------- */
+.crumbs {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-fg-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-3);
+}
+.crumbs a { color: var(--color-fg-secondary); }
+.crumbs a:hover { color: var(--color-fg-primary); text-decoration: none; }
+.crumbs__sep { color: var(--color-border); }
+
+/* ---------- Eyebrow ---------- */
+.label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-secondary);
+}
+
+/* ---------- Mono ---------- */
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "kern", "liga", "tnum" 1;
+}
+
+/* ---------- Card ---------- */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Footer-ish status strip ---------- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--color-divider);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-fg-secondary);
+}
+.statusbar__chain { display: inline-flex; gap: 6px; align-items: center; }
+.statusbar__sep { color: var(--color-border); }
+.statusbar__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-success);
+  display: inline-block;
+}
+
+/* ---------- Tables ---------- */
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.tbl th {
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-secondary);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.tbl td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-divider);
+  vertical-align: middle;
+  color: var(--color-fg-primary);
+}
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tr:hover td { background: var(--color-surface); }
+
+/* density compact — unused, density locked to comfy */
+
+/* ---------- Key facts grid (definition-list pattern) ---------- */
+.keyfacts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-5);
+  row-gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.keyfacts dt {
+  color: var(--color-fg-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  align-self: center;
+}
+.keyfacts dd {
+  margin: 0;
+  color: var(--color-fg-primary);
+}
+.keyfacts dd.mono { font-size: 13px; }
+
+/* ---------- Subtle backgrounds for chrome ---------- */
+.subnote {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-fg-secondary);
+}
+
+/* ---------- focus ring tightening ---------- */
+button:focus-visible, a:focus-visible, .select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Smooth icon rendering for inline SVGs */
+.ic { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* utility */
+.row { display: flex; align-items: center; gap: var(--space-3); }
+.col { display: flex; flex-direction: column; }
+.gap-2 { gap: var(--space-2); }
+.gap-3 { gap: var(--space-3); }
+.gap-4 { gap: var(--space-4); }
+.gap-5 { gap: var(--space-5); }
+.gap-6 { gap: var(--space-6); }
+.flex-1 { flex: 1; }
+.muted { color: var(--color-fg-secondary); }

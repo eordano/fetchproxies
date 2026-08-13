@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}proxy — fetchproxies{% endblock %}
+{% block content %}
+<main class="proxy-main">
+    <header class="proxy-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Health</span>
+        </div>
+        <h1 class="proxy-hero__title">Proxy chain status</h1>
+        <p class="proxy-hero__sub">
+            Per-backend health from <span class="mono">/srv/archive/config/proxy-health.json</span>, refreshed by the <span class="mono">proxy-probe</span> timer (~hourly) and live-updated here every 10 s.
+        </p>
+    </header>
+
+    <div hx-get="/fragments/proxy-status" hx-trigger="every 10s" hx-swap="innerHTML">
+        {% include "fragments/proxy_status.html" %}
+    </div>
+</main>
+{% endblock %}

@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}snapshot — fetchproxies{% endblock %}
+{% block content %}
+{% match snapshot %}
+{% when Some with (s) %}
+<main class="v2-main">
+    <div class="v2-crumbs">
+        <a href="/jobs">all snapshots</a>
+        <span class="crumbs__sep">›</span>
+        <a href="/runs/{{ s.run_id }}">run #{{ s.run_id }}</a>
+        <span class="crumbs__sep">›</span>
+        <span>snapshot #{{ s.id }}</span>
+    </div>
+
+    <header class="v2-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Snapshot #{{ s.id }}</span>
+            {% if s.state == "running" %}
+                <span class="pill pill--info"><span class="pill__dot pill__dot--pulse"></span>running</span>
+            {% else if s.state == "completed" %}
+                <span class="pill pill--success"><span class="pill__dot"></span>completed</span>
+            {% else if s.state == "failed" %}
+                <span class="pill pill--danger"><span class="pill__dot"></span>failed</span>
+            {% else if s.state == "partial" %}
+                <span class="pill pill--warning"><span class="pill__dot"></span>partial</span>
+            {% else if s.state == "cancelled" %}
+                <span class="pill pill--neutral"><span class="pill__dot"></span>cancelled</span>
+            {% else %}
+                <span class="pill pill--neutral"><span class="pill__dot"></span>{{ s.state }}</span>
+            {% endif %}
+            {% if s.profile == "manual" %}
+                <span class="pill pill--neutral"><span class="pill__dot"></span>manual</span>
+            {% endif %}
+        </div>
+        {% match s.user_provided_title %}
+        {% when Some with (t) %}{% if !t.is_empty() %}<h1 class="v2-hero__title">{{ t }}</h1>{% else %}{% match s.extracted_title %}{% when Some with (e) %}{% if !e.is_empty() %}<h1 class="v2-hero__title">{{ e }}</h1>{% else %}<h1 class="v2-hero__title">{{ s.url }}</h1>{% endif %}{% when None %}<h1 class="v2-hero__title">{{ s.url }}</h1>{% endmatch %}{% endif %}
+        {% when None %}{% match s.extracted_title %}{% when Some with (e) %}{% if !e.is_empty() %}<h1 class="v2-hero__title">{{ e }}</h1>{% else %}<h1 class="v2-hero__title">{{ s.url }}</h1>{% endif %}{% when None %}<h1 class="v2-hero__title">{{ s.url }}</h1>{% endmatch %}
+        {% endmatch %}
+        <a class="v2-hero__url mono" href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.url }} {% include "fragments/icons/arrow_up_right.html" %}</a>
+    </header>
+
+    <div class="v2-grid">
+        <aside class="v2-left">
+            <figure class="v2-preview">
+                <div class="v2-preview__chrome">
+                    <span class="v2-preview__dot"></span>
+                    <span class="v2-preview__dot"></span>
+                    <span class="v2-preview__dot"></span>
+                    <span class="v2-preview__addr mono">{{ hostname }}</span>
+                </div>
+                <div class="v2-preview__img">
+                    {% match screenshot_url %}
+                    {% when Some with (src) %}
+                    <a href="{{ src }}" target="_blank" rel="noopener noreferrer">
+                        <img class="v2-preview__shot" src="{{ src }}" alt="screenshot of {{ hostname }}" loading="lazy" />
+                    </a>
+                    {% when None %}
+                    <div class="v2-preview__page">
+                        <div class="v2-preview__page-hdr"></div>
+                        <div class="v2-preview__page-h"></div>
+                        <div class="v2-preview__page-l" style="width: 92%;"></div>
+                        <div class="v2-preview__page-l" style="width: 84%;"></div>
+                        <div class="v2-preview__page-l" style="width: 70%;"></div>
+                        <div class="v2-preview__page-h2" style="margin-top: 22px;"></div>
+                        <div class="v2-preview__page-l" style="width: 88%;"></div>
+                        <div class="v2-preview__page-l" style="width: 76%;"></div>
+                        <div class="v2-preview__page-img"></div>
+                    </div>
+                    {% endmatch %}
+                </div>
+                <figcaption class="v2-preview__cap muted sans">
+                    {% match screenshot_caption %}
+                    {% when Some with (c) %}{{ c }}
+                    {% when None %}no screenshot
+                    {% endmatch %}
+                </figcaption>
+            </figure>
+
+            <div class="v2-facts">
+                <dl class="keyfacts">
+                    <dt>Priority</dt>
+                    <dd class="mono">{{ s.priority }}</dd>
+                    <dt>Tags</dt>
+                    <dd>
+                        {% if s.tags.is_empty() %}
+                            <span class="muted">no tags</span>
+                        {% else %}
+                            <div class="jobs-tags">
+                                {% for t in s.tags %}<a class="jobs-tag" href="/jobs?tag={{ t }}">{{ t }}</a>{% endfor %}
+                            </div>
+                        {% endif %}
+                    </dd>
+                    <dt>Created</dt>
+                    <dd class="mono">{{ s.created_at.format("%Y-%m-%d %H:%M:%S") }}</dd>
+                    <dt>Updated</dt>
+                    <dd class="mono">{{ s.updated_at.format("%Y-%m-%d %H:%M:%S") }}</dd>
+                    <dt>Duration</dt>
+                    <dd class="mono">{% if duration.is_empty() %}—{% else %}{{ duration }}{% endif %}</dd>
+                    <dt>Total</dt>
+                    <dd class="mono">{{ total_size }}</dd>
+                </dl>
+            </div>
+
+            <div class="v2-actions card">
+                {% if s.profile != "manual" %}
+                <div class="v2-actions__row">
+                    <form method="post" action="/api/snapshots/{{ s.id }}/rearchive" style="display: contents;">
+                        <button class="btn btn--primary v2-actions__re" type="submit">
+                            {% include "fragments/icons/refresh.html" %} Re-archive
+                        </button>
+                        <select class="select" name="profile">
+                            <option value="" selected>same extractors</option>
+                            <option value="full">all extractors</option>
+                            <option value="failed">only failed</option>
+                        </select>
+                    </form>
+                </div>
+                {% endif %}
+                <div class="v2-actions__row">
+                    <a class="btn flex-1" href="{{ s.url }}" target="_blank" rel="noopener noreferrer">
+                        {% include "fragments/icons/external.html" %} Open original
+                    </a>
+                    <form method="post" action="/api/snapshots/{{ s.id }}/delete" class="flex-1" onsubmit="return confirm('Delete snapshot #{{ s.id }} and all its artifacts? This cascades.');" style="margin: 0;">
+                        <button class="btn btn--danger" type="submit" style="width: 100%;">
+                            {% include "fragments/icons/trash.html" %} Delete
+                        </button>
+                    </form>
+                </div>
+                {% if s.state == "failed" || s.state == "partial" || s.state == "cancelled" %}
+                <div class="v2-actions__row">
+                    <form method="post" action="/api/snapshots/{{ s.id }}/retry" style="flex: 1; margin: 0;">
+                        <button class="btn" type="submit" style="width: 100%;">Retry failed + skipped</button>
+                    </form>
+                </div>
+                {% endif %}
+                {% if s.state == "pending" || s.state == "running" %}
+                <div class="v2-actions__row">
+                    <form method="post" action="/api/snapshots/{{ s.id }}/cancel" style="flex: 1; margin: 0;">
+                        <button class="btn btn--ghost" type="submit" style="width: 100%;">Cancel pending/running</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </aside>
+
+        <section class="v2-right">
+            <header class="v2-section-head">
+                <div>
+                    <h2 class="v2-section-head__title">Extractor results</h2>
+                    <p class="muted sans" style="font-size: 13px;">{{ completed_summary }}</p>
+                </div>
+                <a class="btn btn--ghost btn--sm" href="/api/v1/snapshots/{{ s.id }}/artifacts">
+                    {% include "fragments/icons/download.html" %} download all
+                </a>
+            </header>
+
+            {% if results.is_empty() %}
+            <div class="empty">No extractor rows — the snapshot was created without a profile fan-out.</div>
+            {% else %}
+            <ul class="v2-extractors">
+                {% for r in results %}
+                <li class="v2-extractor">
+                    <span class="v2-extractor__icon">
+                        {% if r.extractor_icon() == "file_archive" %}{% include "fragments/icons/file_archive.html" %}
+                        {% else if r.extractor_icon() == "file_text" %}{% include "fragments/icons/file_text.html" %}
+                        {% else if r.extractor_icon() == "file_image" %}{% include "fragments/icons/file_image.html" %}
+                        {% else if r.extractor_icon() == "camera" %}{% include "fragments/icons/camera.html" %}
+                        {% else if r.extractor_icon() == "book" %}{% include "fragments/icons/book.html" %}
+                        {% else %}{% include "fragments/icons/file.html" %}
+                        {% endif %}
+                    </span>
+                    <div class="v2-extractor__main">
+                        <div class="v2-extractor__line">
+                            <span class="mono v2-extractor__name">{{ r.extractor }}</span>
+                            <span class="muted sans v2-extractor__desc">{{ r.extractor_desc() }}</span>
+                        </div>
+                        <div class="v2-extractor__meta">
+                            {% if r.state == "running" %}
+                                <span class="pill pill--info"><span class="pill__dot pill__dot--pulse"></span>running</span>
+                            {% else if r.state == "completed" %}
+                                <span class="pill pill--success"><span class="pill__dot"></span>completed</span>
+                            {% else if r.state == "failed" %}
+                                <span class="pill pill--danger"><span class="pill__dot"></span>failed</span>
+                            {% else if r.state == "skipped" %}
+                                <span class="pill pill--neutral"><span class="pill__dot"></span>skipped</span>
+                            {% else %}
+                                <span class="pill pill--neutral"><span class="pill__dot"></span>{{ r.state }}</span>
+                            {% endif %}
+                            <span class="muted sans">·</span>
+                            <span class="mono muted">{{ r.size_display() }}</span>
+                            <span class="muted sans">·</span>
+                            <span class="mono muted" style="font-size: 12px;">{{ r.when_display() }}</span>
+                            {% if r.has_retried() %}
+                                <span class="muted sans">·</span>
+                                <span class="muted sans">{{ r.retry_count }} retries</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if r.is_completed() %}
+                    <a href="/artifacts/results/{{ r.id }}/" class="v2-extractor__dl" rel="noopener">
+                        {% include "fragments/icons/download.html" %} download
+                    </a>
+                    {% else if r.can_retry() %}
+                    <form method="post" action="/api/results/{{ r.id }}/retry" style="margin: 0;">
+                        <button class="v2-extractor__retry" type="submit">{% include "fragments/icons/refresh.html" %} retry</button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <div class="v2-history">
+                <header class="v2-section-head">
+                    <div>
+                        <h2 class="v2-section-head__title">URL history</h2>
+                        <p class="muted sans" style="font-size: 13px;">Earlier captures of this URL</p>
+                    </div>
+                </header>
+                <div class="v2-history__row">
+                    <div class="v2-history__bullet"></div>
+                    <div class="v2-history__main">
+                        <div class="row gap-3">
+                            <span class="mono">{{ s.created_at.format("%Y-%m-%d %H:%M") }}</span>
+                            {% if s.state == "completed" %}
+                                <span class="pill pill--success"><span class="pill__dot"></span>completed</span>
+                            {% else if s.state == "failed" %}
+                                <span class="pill pill--danger"><span class="pill__dot"></span>failed</span>
+                            {% else if s.state == "partial" %}
+                                <span class="pill pill--warning"><span class="pill__dot"></span>partial</span>
+                            {% else %}
+                                <span class="pill pill--neutral"><span class="pill__dot"></span>{{ s.state }}</span>
+                            {% endif %}
+                            <span class="muted sans">this snapshot</span>
+                        </div>
+                    </div>
+                    <span class="mono muted">{{ total_size }}</span>
+                </div>
+                {% if url_history.is_empty() %}
+                <p class="muted sans" style="font-size: 13px; margin-top: 12px;">
+                    No other archives of this URL. Click <em>Re-archive</em> above to capture a fresh snapshot.
+                </p>
+                {% else %}
+                {% for h in url_history %}
+                <div class="v2-history__row">
+                    <div class="v2-history__bullet" style="background: var(--color-fg-secondary);"></div>
+                    <div class="v2-history__main">
+                        <div class="row gap-3">
+                            <a class="mono" href="/jobs/{{ h.id }}">{{ h.created_at.format("%Y-%m-%d %H:%M") }}</a>
+                            {% if h.state == "completed" %}
+                                <span class="pill pill--success"><span class="pill__dot"></span>completed</span>
+                            {% else if h.state == "failed" %}
+                                <span class="pill pill--danger"><span class="pill__dot"></span>failed</span>
+                            {% else if h.state == "partial" %}
+                                <span class="pill pill--warning"><span class="pill__dot"></span>partial</span>
+                            {% else %}
+                                <span class="pill pill--neutral"><span class="pill__dot"></span>{{ h.state }}</span>
+                            {% endif %}
+                            <span class="muted sans">run #{{ h.run_id }}</span>
+                        </div>
+                    </div>
+                    <span class="mono muted">#{{ h.id }}</span>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+
+            {% if !user_content.is_empty() %}
+            <header class="v2-section-head" style="margin-top: var(--space-7);">
+                <div>
+                    <h2 class="v2-section-head__title">User-provided content</h2>
+                    <p class="muted sans" style="font-size: 13px;">
+                        Pasted at submission time — manual snapshots only.
+                    </p>
+                </div>
+            </header>
+            <ul class="v2-extractors">
+                {% for c in user_content %}
+                <li class="v2-extractor">
+                    <div class="row gap-3" style="justify-content: space-between; flex-wrap: wrap;">
+                        <div class="row gap-3" style="flex: 1; min-width: 0;">
+                            <span class="mono">{{ c.key }}</span>
+                            <span class="muted sans" style="font-size: 13px;">{{ c.effective_mime_type() }}</span>
+                            <span class="muted mono" style="font-size: 12px;">{{ c.created_at.format("%Y-%m-%d %H:%M:%S") }}</span>
+                        </div>
+                    </div>
+                    <details style="margin-top: 8px;">
+                        <summary class="muted sans" style="font-size: 13px; cursor: pointer;">view content ({{ c.content.len() }} bytes)</summary>
+                        <pre class="mono" style="margin-top: 8px; padding: var(--space-3); background: var(--color-surface-sunken); border-radius: var(--radius-sm); overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 12.5px;">{{ c.content }}</pre>
+                    </details>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </section>
+    </div>
+</main>
+
+{% when None %}
+<main class="v2-main">
+    <div class="v2-crumbs">
+        <a href="/jobs">all snapshots</a>
+        <span class="crumbs__sep">›</span>
+        <span>not found</span>
+    </div>
+    <header class="v2-hero">
+        <h1 class="v2-hero__title">Snapshot not found</h1>
+        <p class="muted sans">ID may have been deleted, or never existed.</p>
+    </header>
+</main>
+{% endmatch %}
+{% endblock %}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" data-density="comfy">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{% block title %}fetchproxies{% endblock %}</title>
+    <link rel="stylesheet" href="/static/colors_and_type.css">
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="icon" type="image/svg+xml" href="/static/assets/logomark.svg">
+    {% block head %}{% endblock %}
+    <script src="/static/htmx.min.js"></script>
+    <script>
+    // Whole-row click target for any <tr data-href="..."> — runs,
+    // snapshots, history rows. Left-click anywhere in the row that
+    // isn't already a link/button/input/select navigates to the
+    // row's href; cmd/ctrl-click opens in a new tab. Middle-click
+    // and right-click are left to the browser. Keyboard a11y is
+    // covered by the explicit <a> still living in the first cell.
+    document.addEventListener('click', (e) => {
+        const row = e.target.closest('tr[data-href]');
+        if (!row) return;
+        if (e.target.closest('a,button,input,select,textarea,label')) return;
+        if (e.button !== 0) return;
+        // Don't hijack if the user is selecting text.
+        const sel = window.getSelection();
+        if (sel && sel.toString().length > 0) return;
+        const href = row.dataset.href;
+        // Absolute URLs (the help "Fronted services" rows point at
+        // twitter.example.org, etc.) always open in a new tab so the
+        // operator's place in the dashboard isn't lost. Internal
+        // paths navigate in the current tab unless cmd/ctrl-click.
+        const external = /^https?:\/\//i.test(href);
+        if (external || e.metaKey || e.ctrlKey) {
+            window.open(href, '_blank', 'noopener');
+        } else {
+            window.location.href = href;
+        }
+    });
+    </script>
+</head>
+<body>
+<div class="app">
+    <header class="appbar">
+        <a class="appbar__brand" href="/">
+            <span class="appbar__brand-mark">{% include "fragments/icons/fp_mark.html" %}</span>
+            <span>fetchproxies</span>
+        </a>
+        <nav class="appbar__nav">
+            <a href="/jobs"{% if active == "jobs" %} class="is-active"{% endif %}>jobs</a>
+            <a href="/runs"{% if active == "runs" %} class="is-active"{% endif %}>runs</a>
+            <a href="/proxy"{% if active == "proxy" %} class="is-active"{% endif %}>proxy</a>
+            <a href="/nitter"{% if active == "nitter" %} class="is-active"{% endif %}>nitter</a>
+            <a href="/youtube"{% if active == "youtube" %} class="is-active"{% endif %}>youtube</a>
+            <a href="/logs"{% if active == "logs" %} class="is-active"{% endif %}>logs</a>
+            <a href="/help"{% if active == "help" %} class="is-active"{% endif %}>help</a>
+        </nav>
+        <div class="appbar__right">
+            <a class="btn btn--primary btn--sm" href="/jobs/new">
+                {% include "fragments/icons/plus.html" %} new snapshot
+            </a>
+        </div>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="statusbar">
+        <span class="statusbar__chain">
+            <span class="statusbar__dot"></span>
+            <span><a href="/api/openapi.json">openapi</a></span>
+            <span class="statusbar__sep">·</span>
+            <span><a href="/api/v1/export">export</a></span>
+            <span class="statusbar__sep">·</span>
+            <span>socks</span>
+            <span class="statusbar__sep">→</span>
+            <span>mullvad</span>
+            <span class="statusbar__sep">→</span>
+            <span>exit</span>
+        </span>
+        <span class="flex-1"></span>
+        <span class="muted">connected · 4 ms</span>
+    </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,1226 @@
+use crate::{db, templates, AppState};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Json, Redirect,
+    },
+    Form,
+};
+use serde::Deserialize;
+use std::sync::Arc;
+
+type S = State<Arc<AppState>>;
+
+// --- Pages ---
+
+pub async fn index(State(state): S) -> impl IntoResponse {
+    let stats = db::get_stats(&state.db).await.unwrap();
+    let snapshots = db::list_snapshots(&state.db, 5).await.unwrap();
+    templates::IndexTemplate {
+        active: "",
+        stats,
+        snapshots,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SnapshotsQuery {
+    state: Option<String>,
+    url: Option<String>,
+    tag: Option<String>,
+    run: Option<i64>,
+}
+
+pub async fn jobs_list(State(state): S, Query(q): Query<SnapshotsQuery>) -> impl IntoResponse {
+    let url_f = q.url.as_deref().filter(|s| !s.is_empty());
+    let tag_f = q.tag.as_deref().filter(|s| !s.is_empty());
+    let state_f = q.state.as_deref().filter(|s| !s.is_empty());
+    let snapshots =
+        db::list_snapshots_filtered(&state.db, state_f, url_f, tag_f, q.run, 100)
+            .await
+            .unwrap();
+    let counts = db::get_state_counts(&state.db).await.unwrap_or_default();
+    templates::JobsListTemplate {
+        active: "jobs",
+        snapshots,
+        counts,
+        filter: q.state.filter(|s| !s.is_empty()),
+        url_filter: q.url.filter(|s| !s.is_empty()).unwrap_or_default(),
+        tag_filter: q.tag.filter(|s| !s.is_empty()).unwrap_or_default(),
+        run_filter: q.run,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct JobsNewQuery {
+    error: Option<String>,
+    profile: Option<String>,
+}
+
+pub async fn jobs_new_form(Query(q): Query<JobsNewQuery>) -> impl IntoResponse {
+    let error = q.error.map(|code| match code.as_str() {
+        "urls-empty" => "Submit at least one non-empty URL.".to_string(),
+        "profile-unknown" => format!(
+            "Unknown profile '{}'. Pick one from the dropdown.",
+            q.profile.unwrap_or_default()
+        ),
+        "db" => "Database error while creating the run. Try again or check the logs.".to_string(),
+        other => format!("Submission failed: {}", other),
+    });
+    templates::JobsNewTemplate {
+        active: "jobs",
+        error,
+    }
+}
+
+pub async fn job_detail(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    let snapshot = db::get_snapshot(&state.db, id).await.unwrap();
+    let results = db::get_snapshot_result_rows(&state.db, id).await.unwrap();
+    let url_history = match &snapshot {
+        Some(s) => db::list_url_history(&state.db, &s.url, s.id, 20)
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let user_content = match &snapshot {
+        Some(s) => db::get_snapshot_user_content(&state.db, s.id)
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    // Derive the v2-preview pane's metadata from the snapshot + its
+    // results. The design canvas reads these from a faux SNAPSHOT
+    // record; here they roll up from the live DB rows.
+    let hostname = snapshot
+        .as_ref()
+        .map(|s| extract_hostname(&s.url))
+        .unwrap_or_default();
+    let total_size = format_bytes(
+        results
+            .iter()
+            .filter_map(|r| r.size_bytes)
+            .sum::<i64>(),
+    );
+    let duration = compute_duration(&results);
+    let completed_count = results.iter().filter(|r| r.is_completed()).count();
+    let completed_summary = format!(
+        "{} of {} completed{}",
+        completed_count,
+        results.len(),
+        if duration.is_empty() {
+            String::new()
+        } else {
+            format!(" · captured in {}", duration)
+        }
+    );
+    let screenshot_result = results
+        .iter()
+        .find(|r| r.extractor == "screenshot" && r.is_completed());
+    let screenshot_caption =
+        screenshot_result.map(|r| format!("screenshot.png · {}", r.size_display()));
+    let screenshot_url =
+        screenshot_result.map(|r| format!("/artifacts/results/{}/screenshot.png", r.id));
+
+    templates::JobDetailTemplate {
+        active: "jobs",
+        snapshot,
+        results,
+        url_history,
+        hostname,
+        total_size,
+        duration,
+        completed_summary,
+        screenshot_caption,
+        screenshot_url,
+        user_content,
+    }
+}
+
+/// Pull the hostname out of an absolute URL the cheap way — find the
+/// `://` and clip up to the next `/` or `?`. Falls back to the whole
+/// string if there's no scheme.
+fn extract_hostname(url: &str) -> String {
+    let after_scheme = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let host = after_scheme
+        .split(|c: char| c == '/' || c == '?' || c == '#')
+        .next()
+        .unwrap_or("");
+    host.to_string()
+}
+
+fn format_bytes(b: i64) -> String {
+    match b {
+        0 => "—".into(),
+        b if b < 1024 => format!("{} B", b),
+        b if b < 1024 * 1024 => format!("{:.1} KB", b as f64 / 1024.0),
+        b if b < 1024 * 1024 * 1024 => format!("{:.1} MB", b as f64 / 1048576.0),
+        b => format!("{:.2} GB", b as f64 / 1073741824.0),
+    }
+}
+
+fn compute_duration(results: &[db::ResultRow]) -> String {
+    let starts = results.iter().filter_map(|r| r.started_at).min();
+    let ends = results.iter().filter_map(|r| r.completed_at).max();
+    match (starts, ends) {
+        (Some(s), Some(e)) if e >= s => {
+            let secs = (e - s).num_seconds();
+            if secs < 60 {
+                format!("{:.1} s", secs as f64)
+            } else if secs < 3600 {
+                format!("{:.1} min", secs as f64 / 60.0)
+            } else {
+                format!("{:.1} h", secs as f64 / 3600.0)
+            }
+        }
+        _ => String::new(),
+    }
+}
+
+pub async fn runs_list(State(state): S) -> impl IntoResponse {
+    let runs = db::list_runs(&state.db, 100).await.unwrap();
+    templates::RunsListTemplate {
+        active: "runs",
+        runs,
+    }
+}
+
+pub async fn run_detail(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    let run = db::get_run(&state.db, id).await.unwrap();
+    let snapshots = db::list_run_snapshots(&state.db, id).await.unwrap();
+    let has_retriable = snapshots
+        .iter()
+        .any(|s| s.state == "failed" || s.state == "partial" || s.state == "cancelled");
+    let has_active = snapshots
+        .iter()
+        .any(|s| s.state == "pending" || s.state == "running");
+    templates::RunDetailTemplate {
+        active: "runs",
+        run,
+        snapshots,
+        has_retriable,
+        has_active,
+    }
+}
+
+pub async fn proxy_status(State(state): S) -> impl IntoResponse {
+    let health_json = tokio::fs::read_to_string(&state.proxy_health_path)
+        .await
+        .unwrap_or_else(|_| "{}".to_string());
+    let health = db::parse_health(&health_json);
+    templates::ProxyStatusTemplate {
+        active: "proxy",
+        health,
+    }
+}
+
+pub async fn logs_page() -> impl IntoResponse {
+    templates::LogsTemplate { active: "logs" }
+}
+
+/// All fetchproxies-relevant unit globs. The single /logs/stream
+/// endpoint subscribes to this superset; per-connection routing
+/// events (proxy-chain, mullvad relays, bright-data, http→socks
+/// bridges, probe) are inside it, so the operator narrows via the
+/// in-page category pills instead of a separate page.
+const ALL_LOG_UNITS: &[&str] = &[
+    "fetchproxies-*",
+    "proxy-chain*",
+    "proxy-wg-relay-*",
+    "mullvad-extract-*",
+    "mullvad-relay-*",
+    "brightdata-relay",
+    "nitter",
+    "nitter-mint",
+    "nitter-http-bridge",
+    "nitter-sessions-reload",
+    "redlib",
+    "redlib-probe-*",
+    "kiwix",
+    "transmission*",
+    "invidious*",
+    "invidious-companion*",
+    "invidious-http-bridge",
+    "redis-*",
+    "podman-*",
+];
+
+/// Spawn `journalctl --follow -o json` filtered to the given unit
+/// Strip Go stdlib log's leading timestamp prefix from a message line.
+/// gost (when run via CLI without a config file) prefixes every log
+/// line with `YYYY/MM/DD HH:MM:SS[.ffffff] ` via Go's `LstdFlags |
+/// Lmicroseconds`. The dashboard already renders `__REALTIME_TIMESTAMP`
+/// in the row's leading column using the project-wide
+/// `YYYY-MM-DD HH:MM:SS` shape, so the in-message copy is redundant
+/// noise — and worse, in a different format.
+///
+/// Only strips when the line shape matches exactly. Anything that
+/// doesn't look like a Go stdlib log (e.g. a service that emits its
+/// own structured logs, or a journalctl entry without a service-side
+/// timestamp) passes through untouched.
+fn strip_log_ts_prefix(s: &str) -> &str {
+    let b = s.as_bytes();
+    if b.len() < 20
+        || b[4] != b'/' || b[7] != b'/' || b[10] != b' '
+        || b[13] != b':' || b[16] != b':'
+    {
+        return s;
+    }
+    let digits = |range: std::ops::Range<usize>| range.into_iter().all(|i| b[i].is_ascii_digit());
+    if !(digits(0..4) && digits(5..7) && digits(8..10)
+        && digits(11..13) && digits(14..16) && digits(17..19))
+    {
+        return s;
+    }
+    let mut i = 19;
+    if b.get(i) == Some(&b'.') {
+        i += 1;
+        while b.get(i).is_some_and(|c| c.is_ascii_digit()) {
+            i += 1;
+        }
+    }
+    if b.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    &s[i..]
+}
+
+/// globs, parse each emitted record, and emit a slim per-event SSE
+/// payload. The slim payload is itself one JSON object per `data:`
+/// line so the client can JSON.parse it cheaply.
+///
+/// Source override: `JOURNAL_COMMAND` (or per-stream
+/// `JOURNAL_COMMAND_LOGS` / `JOURNAL_COMMAND_PROXY` for the two
+/// endpoints) replaces the journalctl invocation. The value is
+/// shell-split (whitespace-separated; quoting not honoured — keep
+/// args simple); the command is expected to print one
+/// journalctl-shape JSON object per line on stdout, forever. Used by
+/// dev/preview.sh to feed synthetic events when there's no real
+/// journald to read from.
+fn journal_sse(
+    units: &'static [&'static str],
+    override_var: &'static str,
+) -> impl IntoResponse {
+    let stream = async_stream::stream! {
+        let override_cmd = std::env::var(override_var)
+            .ok()
+            .or_else(|| std::env::var("JOURNAL_COMMAND").ok());
+        let mut cmd = if let Some(s) = override_cmd.as_deref() {
+            let mut parts = s.split_whitespace();
+            let head = parts.next().unwrap_or("true");
+            let mut c = tokio::process::Command::new(head);
+            for arg in parts { c.arg(arg); }
+            c
+        } else {
+            let mut c = tokio::process::Command::new("journalctl");
+            c.arg("--follow")
+                .arg("--no-pager")
+                .arg("-o").arg("json")
+                .arg("-n").arg("80");
+            for u in units {
+                c.arg("-u").arg(*u);
+            }
+            c
+        };
+        let mut child = match cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let payload = serde_json::json!({
+                    "ts": null,
+                    "unit": "dashboard",
+                    "level": "err",
+                    "msg": format!("journalctl spawn failed: {}", e),
+                });
+                yield Ok::<_, std::convert::Infallible>(Event::default().data(payload.to_string()));
+                return;
+            }
+        };
+
+        let stdout = child.stdout.take().unwrap();
+        let reader = tokio::io::BufReader::new(stdout);
+        let mut lines = tokio::io::AsyncBufReadExt::lines(reader);
+
+        while let Ok(Some(line)) = lines.next_line().await {
+            // Each journalctl -o json line is a JSON object with many
+            // fields. Pull out only the bits we render. Some fields
+            // can be missing (e.g. session-only events without a unit),
+            // so default sensibly.
+            let v: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // __REALTIME_TIMESTAMP is microseconds-since-epoch as a string.
+            let ts_us: i64 = v
+                .get("__REALTIME_TIMESTAMP")
+                .and_then(|x| x.as_str())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            let unit = v
+                .get("_SYSTEMD_UNIT")
+                .or_else(|| v.get("UNIT"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim_end_matches(".service");
+            let level = v
+                .get("PRIORITY")
+                .and_then(|x| x.as_str())
+                .unwrap_or("6"); // 6 = info
+            let raw_msg = v
+                .get("MESSAGE")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            // Drop gost's redundant in-message timestamp so the row
+            // shows a single, dashboard-formatted ts in the leading
+            // column.
+            let msg = strip_log_ts_prefix(raw_msg);
+
+            // gost emits its own JSON inside MESSAGE. Try to parse it
+            // and pluck the human-friendly fields so the client doesn't
+            // have to. If MESSAGE isn't JSON, leave gost null. Use the
+            // raw (unstripped) text — strip_log_ts_prefix doesn't touch
+            // JSON-shaped lines anyway, but be explicit.
+            let gost = serde_json::from_str::<serde_json::Value>(raw_msg).ok();
+
+            let payload = serde_json::json!({
+                "ts_us": ts_us,
+                "unit": unit,
+                "level": level,
+                "msg": msg,
+                "gost": gost,
+            });
+            yield Ok::<_, std::convert::Infallible>(Event::default().data(payload.to_string()));
+        }
+    };
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+pub async fn logs_stream() -> impl IntoResponse {
+    journal_sse(ALL_LOG_UNITS, "JOURNAL_COMMAND_LOGS")
+}
+
+// /proxy-log was folded into /logs (single stream + in-page category
+// pills). The handlers below stay as no-ops in case anything still
+// hardcodes the old path; they redirect to /logs.
+
+// --- Htmx fragments ---
+
+pub async fn fragment_job_table(
+    State(state): S,
+    Query(q): Query<SnapshotsQuery>,
+) -> impl IntoResponse {
+    let url_f = q.url.as_deref().filter(|s| !s.is_empty());
+    let tag_f = q.tag.as_deref().filter(|s| !s.is_empty());
+    let state_f = q.state.as_deref().filter(|s| !s.is_empty());
+    let any_filter = state_f.is_some() || url_f.is_some() || tag_f.is_some() || q.run.is_some();
+    let snapshots = if any_filter {
+        db::list_snapshots_filtered(&state.db, state_f, url_f, tag_f, q.run, 100)
+            .await
+            .unwrap()
+    } else {
+        db::list_snapshots(&state.db, 20).await.unwrap()
+    };
+    templates::JobTableFragment { snapshots }
+}
+
+pub async fn fragment_proxy_status(State(state): S) -> impl IntoResponse {
+    let health_json = tokio::fs::read_to_string(&state.proxy_health_path)
+        .await
+        .unwrap_or_else(|_| "{}".to_string());
+    let health = db::parse_health(&health_json);
+    templates::ProxyStatusFragment { health }
+}
+
+// --- Submission ---
+
+#[derive(Deserialize)]
+pub struct CreateJobsForm {
+    urls: String,
+    profile: Option<String>,
+    priority: Option<i32>,
+    tags: Option<String>,
+    proxy_chain: Option<String>,
+}
+
+fn parse_tags(raw: Option<&str>) -> Vec<String> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn parse_urls(raw: &str) -> Vec<String> {
+    raw.lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+pub async fn api_create_jobs_batch(
+    State(state): S,
+    Form(form): Form<CreateJobsForm>,
+) -> impl IntoResponse {
+    let urls = parse_urls(&form.urls);
+    if urls.is_empty() {
+        return Redirect::to("/jobs/new?error=urls-empty");
+    }
+    let tags = parse_tags(form.tags.as_deref());
+    let profile = form.profile.unwrap_or_else(|| "full".to_string());
+    let proxy_chain = form.proxy_chain.as_deref().filter(|s| !s.is_empty());
+
+    match db::create_run_with_snapshots(
+        &state.db,
+        &urls,
+        &profile,
+        form.priority.unwrap_or(0),
+        &tags,
+        proxy_chain,
+        "api",
+    )
+    .await
+    {
+        Ok((run_id, _)) => Redirect::to(&format!("/runs/{}", run_id)),
+        Err(sqlx::Error::RowNotFound) => {
+            // Profile name didn't match any seed row.
+            Redirect::to(&format!(
+                "/jobs/new?error=profile-unknown&profile={}",
+                profile
+            ))
+        }
+        Err(_) => Redirect::to("/jobs/new?error=db"),
+    }
+}
+
+// --- Manual snapshot submission ---
+
+#[derive(Deserialize)]
+pub struct JobsManualQuery {
+    error: Option<String>,
+}
+
+pub async fn jobs_manual_form(Query(q): Query<JobsManualQuery>) -> impl IntoResponse {
+    let error = q.error.map(|code| match code.as_str() {
+        "url-empty" => "Submit a URL — manual snapshots still need a stable identifier.".to_string(),
+        "no-content" =>
+            "Provide at least one of: title, HTML, markdown, or a custom blob.".to_string(),
+        "db" => "Database error while saving the manual snapshot. Try again or check the logs.".to_string(),
+        other => format!("Submission failed: {}", other),
+    });
+    templates::JobsManualTemplate {
+        active: "jobs",
+        error,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreateManualForm {
+    url: String,
+    title: Option<String>,
+    html: Option<String>,
+    markdown: Option<String>,
+    /// Pairs of `custom_keys[]` + `custom_contents[]` from the form.
+    /// HTML form arrays show up as repeated fields with the same name;
+    /// serde collects them into Vec when the field is `Vec<String>`.
+    #[serde(default, rename = "custom_keys[]")]
+    custom_keys: Vec<String>,
+    #[serde(default, rename = "custom_contents[]")]
+    custom_contents: Vec<String>,
+    tags: Option<String>,
+    priority: Option<i32>,
+}
+
+fn collect_manual_contents(form: &CreateManualForm) -> Vec<db::ManualContent> {
+    let mut out: Vec<db::ManualContent> = Vec::new();
+    if let Some(h) = form.html.as_ref().filter(|s| !s.is_empty()) {
+        out.push(db::ManualContent {
+            key: "html".to_string(),
+            content: h.clone(),
+            mime_type: Some("text/html".to_string()),
+        });
+    }
+    if let Some(m) = form.markdown.as_ref().filter(|s| !s.is_empty()) {
+        out.push(db::ManualContent {
+            key: "markdown".to_string(),
+            content: m.clone(),
+            mime_type: Some("text/markdown".to_string()),
+        });
+    }
+    // Custom blobs: zip parallel form arrays. Empty key OR empty content
+    // skips the row — the form-row UI lets users add then forget rows.
+    for (k, c) in form.custom_keys.iter().zip(form.custom_contents.iter()) {
+        let key = k.trim();
+        if key.is_empty() || c.is_empty() || key == "html" || key == "markdown" {
+            // Reject the well-known keys here to keep the html/markdown
+            // dedicated fields as the only writers — otherwise a stray
+            // `custom_keys[]=html` would clobber the dedicated textarea.
+            continue;
+        }
+        out.push(db::ManualContent {
+            key: key.to_string(),
+            content: c.clone(),
+            mime_type: None,
+        });
+    }
+    out
+}
+
+pub async fn api_create_manual_snapshot(
+    State(state): S,
+    Form(form): Form<CreateManualForm>,
+) -> impl IntoResponse {
+    let url = form.url.trim();
+    if url.is_empty() {
+        return Redirect::to("/jobs/manual?error=url-empty");
+    }
+    let title = form.title.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let contents = collect_manual_contents(&form);
+    if title.is_none() && contents.is_empty() {
+        return Redirect::to("/jobs/manual?error=no-content");
+    }
+    let tags = parse_tags(form.tags.as_deref());
+
+    match db::create_manual_snapshot(
+        &state.db,
+        url,
+        title,
+        &contents,
+        &tags,
+        form.priority.unwrap_or(0),
+        "manual",
+    )
+    .await
+    {
+        Ok((_run_id, snapshot_id)) => Redirect::to(&format!("/jobs/{}", snapshot_id)),
+        Err(_) => Redirect::to("/jobs/manual?error=db"),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ManualContentJson {
+    pub key: String,
+    pub content: String,
+    pub mime_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateManualJsonBody {
+    pub url: String,
+    pub title: Option<String>,
+    pub html: Option<String>,
+    pub markdown: Option<String>,
+    #[serde(default)]
+    pub custom_contents: Vec<ManualContentJson>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub priority: Option<i32>,
+}
+
+pub async fn api_json_create_manual_snapshot(
+    State(state): S,
+    Json(body): Json<CreateManualJsonBody>,
+) -> impl IntoResponse {
+    let url = body.url.trim();
+    if url.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "url is required"})),
+        )
+            .into_response();
+    }
+    let title = body.title.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let mut contents: Vec<db::ManualContent> = Vec::new();
+    if let Some(h) = body.html.as_ref().filter(|s| !s.is_empty()) {
+        contents.push(db::ManualContent {
+            key: "html".to_string(),
+            content: h.clone(),
+            mime_type: Some("text/html".to_string()),
+        });
+    }
+    if let Some(m) = body.markdown.as_ref().filter(|s| !s.is_empty()) {
+        contents.push(db::ManualContent {
+            key: "markdown".to_string(),
+            content: m.clone(),
+            mime_type: Some("text/markdown".to_string()),
+        });
+    }
+    for c in &body.custom_contents {
+        let key = c.key.trim();
+        if key.is_empty() || c.content.is_empty() || key == "html" || key == "markdown" {
+            continue;
+        }
+        contents.push(db::ManualContent {
+            key: key.to_string(),
+            content: c.content.clone(),
+            mime_type: c.mime_type.clone(),
+        });
+    }
+    if title.is_none() && contents.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "supply at least a title or one content blob"})),
+        )
+            .into_response();
+    }
+    match db::create_manual_snapshot(
+        &state.db,
+        url,
+        title,
+        &contents,
+        &body.tags,
+        body.priority.unwrap_or(0),
+        "api",
+    )
+    .await
+    {
+        Ok((run_id, snapshot_id)) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "run_id": run_id,
+                "snapshot_id": snapshot_id,
+                "content_keys": contents.iter().map(|c| &c.key).collect::<Vec<_>>(),
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("db: {}", e)})),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn api_retry_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    db::retry_snapshot(&state.db, id).await.unwrap();
+    Redirect::to(&format!("/jobs/{}", id))
+}
+
+pub async fn api_retry_result(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    let snapshot_id: Option<i64> =
+        sqlx::query_scalar("SELECT snapshot_id FROM archive_results WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
+    db::retry_result(&state.db, id).await.unwrap();
+    match snapshot_id {
+        Some(s) => Redirect::to(&format!("/jobs/{}", s)),
+        None => Redirect::to("/jobs"),
+    }
+}
+
+pub async fn api_cancel_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    db::cancel_snapshot(&state.db, id).await.unwrap();
+    Redirect::to(&format!("/jobs/{}", id))
+}
+
+pub async fn api_delete_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    db::delete_snapshot(&state.db, id).await.unwrap();
+    Redirect::to("/jobs")
+}
+
+#[derive(Deserialize, Default)]
+pub struct RearchiveForm {
+    #[serde(default)]
+    profile: Option<String>,
+}
+
+pub async fn api_rearchive_snapshot(
+    State(state): S,
+    Path(id): Path<i64>,
+    form: Option<Form<RearchiveForm>>,
+) -> impl IntoResponse {
+    let form = form.map(|Form(f)| f).unwrap_or_default();
+    let profile = form.profile.as_deref().filter(|s| !s.is_empty());
+    match db::rearchive_snapshot(&state.db, id, profile).await {
+        Ok(new_id) => Redirect::to(&format!("/jobs/{}", new_id)),
+        Err(sqlx::Error::RowNotFound) => {
+            Redirect::to(&format!("/jobs/{}?error=profile-unknown", id))
+        }
+        Err(_) => Redirect::to(&format!("/jobs/{}", id)),
+    }
+}
+
+pub async fn api_retry_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    db::retry_run(&state.db, id).await.unwrap();
+    Redirect::to(&format!("/runs/{}", id))
+}
+
+pub async fn api_cancel_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    db::cancel_run(&state.db, id).await.unwrap();
+    Redirect::to(&format!("/runs/{}", id))
+}
+
+pub async fn api_delete_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    db::delete_run(&state.db, id).await.unwrap();
+    Redirect::to("/runs")
+}
+
+// --- Nitter mint ---
+
+pub async fn nitter_page(State(state): S) -> impl IntoResponse {
+    let status = db::get_nitter_mint_status(&state.db).await.unwrap_or(None);
+    let override_row = db::get_nitter_creds_override(&state.db).await.unwrap_or(None);
+    let egress = db::get_egress_mode(&state.db, "nitter").await.unwrap_or(None);
+    templates::NitterTemplate {
+        active: "nitter",
+        status,
+        override_row,
+        trigger_path: state.nitter_trigger_path.clone(),
+        egress,
+    }
+}
+
+pub async fn api_nitter_trigger(State(state): S) -> impl IntoResponse {
+    let _ = tokio::fs::write(&state.nitter_trigger_path, "").await;
+    Redirect::to("/nitter")
+}
+
+#[derive(Deserialize)]
+pub struct NitterOverrideForm {
+    pub action: String, // "save" | "clear"
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub totp_secret: Option<String>,
+}
+
+pub async fn api_nitter_override(
+    State(state): S,
+    Form(form): Form<NitterOverrideForm>,
+) -> impl IntoResponse {
+    if form.action == "clear" {
+        let _ = db::clear_nitter_override(&state.db).await;
+    } else {
+        let _ = db::upsert_nitter_override(
+            &state.db,
+            form.username.as_deref().unwrap_or(""),
+            form.password.as_deref().unwrap_or(""),
+            form.totp_secret.as_deref().unwrap_or(""),
+            "use_override",
+        )
+        .await;
+    }
+    Redirect::to("/nitter")
+}
+
+// --- Per-service egress mode ---
+//
+// The dashboard surfaces a `proxy_chain | direct` toggle for each
+// service (nitter, invidious, companion). The values are persisted
+// to service_egress_mode; a separate supervisor (TBD) reads the
+// table and rewires systemd's environment + restarts the service.
+
+#[derive(Deserialize)]
+pub struct EgressForm {
+    pub mode: String,           // 'proxy_chain' | 'direct'
+    pub reason: Option<String>,
+}
+
+pub async fn api_set_egress(
+    State(state): S,
+    Path(service): Path<String>,
+    Form(form): Form<EgressForm>,
+) -> impl IntoResponse {
+    let valid_service = matches!(service.as_str(), "nitter" | "invidious" | "companion");
+    let valid_mode = matches!(form.mode.as_str(), "proxy_chain" | "direct");
+    if !valid_service || !valid_mode {
+        return (StatusCode::BAD_REQUEST, "invalid service or mode").into_response();
+    }
+    let _ = db::set_egress_mode(
+        &state.db,
+        &service,
+        &form.mode,
+        form.reason.as_deref().filter(|s| !s.is_empty()),
+    )
+    .await;
+    crate::supervisor::regenerate_all(&state.db).await;
+    let redirect = if service == "nitter" { "/nitter" } else { "/youtube" };
+    Redirect::to(redirect).into_response()
+}
+
+// --- YouTube / invidious-companion auth ---
+//
+// Sketch — wires UI to DB. The actual OAuth device-flow polling
+// (POST oauth2.googleapis.com/device/code, GET /token loop) and the
+// systemd env propagation that flips companion between
+// PROXY=http://127.0.0.1:1184 (proxy_chain) and PROXY="" (direct)
+// land in a follow-up commit. For now: status read, manual
+// refresh-token paste, cookies paste, clear.
+
+pub async fn youtube_page(State(state): S) -> impl IntoResponse {
+    let auth = db::get_youtube_auth(&state.db).await.unwrap_or(None);
+    let pending = db::get_youtube_oauth_pending(&state.db).await.unwrap_or(None);
+    let status = db::get_youtube_companion_status(&state.db).await.unwrap_or(None);
+    let egress_companion = db::get_egress_mode(&state.db, "companion").await.unwrap_or(None);
+    let egress_invidious = db::get_egress_mode(&state.db, "invidious").await.unwrap_or(None);
+    templates::YoutubeTemplate {
+        active: "youtube",
+        auth,
+        pending,
+        status,
+        egress_companion,
+        egress_invidious,
+    }
+}
+
+pub async fn api_youtube_oauth_start(State(state): S) -> impl IntoResponse {
+    // Flip companion into OAuth mode and let it run the device flow
+    // itself. Companion's main.ts wires `auth-pending` → console.log
+    // with the verification URL + user_code; the journal_watcher
+    // task picks that line up and writes through to
+    // youtube_oauth_pending, which this page displays on next render.
+    //
+    // No refresh_token yet — that's set by the watcher when companion
+    // logs `[INFO] [OAUTH] Sign in successful!`. We seed the auth row
+    // with method='oauth' and an empty refresh_token so the
+    // supervisor emits YOUTUBE_SESSION_OAUTH_ENABLED=true on the
+    // restart that the path unit kicks off below.
+    let _ = db::upsert_youtube_oauth_token(
+        &state.db,
+        "", // no token yet — companion will mint one via Google
+        None,
+        None,
+        Some("https://www.googleapis.com/auth/youtube"),
+        None,
+    )
+    .await;
+    crate::supervisor::regenerate_all(&state.db).await;
+    Redirect::to("/youtube").into_response()
+}
+
+#[derive(Deserialize)]
+pub struct ManualRefreshTokenForm {
+    pub refresh_token: String,
+    pub account_email: Option<String>,
+}
+
+pub async fn api_youtube_oauth_manual(
+    State(state): S,
+    Form(form): Form<ManualRefreshTokenForm>,
+) -> impl IntoResponse {
+    if form.refresh_token.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "refresh_token required").into_response();
+    }
+    let _ = db::upsert_youtube_oauth_token(
+        &state.db,
+        form.refresh_token.trim(),
+        None, // access_token derived on first use
+        None, // expires_at derived
+        Some("https://www.googleapis.com/auth/youtube"),
+        form.account_email.as_deref().filter(|s| !s.is_empty()),
+    )
+    .await;
+    crate::supervisor::regenerate_all(&state.db).await;
+    Redirect::to("/youtube").into_response()
+}
+
+#[derive(Deserialize)]
+pub struct YoutubeCookiesForm {
+    pub cookies: String,
+}
+
+pub async fn api_youtube_cookies(
+    State(state): S,
+    Form(form): Form<YoutubeCookiesForm>,
+) -> impl IntoResponse {
+    if form.cookies.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "cookies required").into_response();
+    }
+    let _ = db::upsert_youtube_cookies(&state.db, form.cookies.trim()).await;
+    crate::supervisor::regenerate_all(&state.db).await;
+    Redirect::to("/youtube").into_response()
+}
+
+pub async fn api_youtube_clear(State(state): S) -> impl IntoResponse {
+    let _ = db::clear_youtube_auth(&state.db).await;
+    crate::supervisor::regenerate_all(&state.db).await;
+    Redirect::to("/youtube").into_response()
+}
+
+// --- JSON API ---
+
+pub async fn api_json_stats(State(state): S) -> impl IntoResponse {
+    match db::get_stats(&state.db).await {
+        Ok(stats) => Json(stats).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_proxy_health(State(state): S) -> impl IntoResponse {
+    let health = tokio::fs::read_to_string(&state.proxy_health_path)
+        .await
+        .unwrap_or_else(|_| "{}".to_string());
+    ([("content-type", "application/json")], health)
+}
+
+pub async fn api_json_snapshots(State(state): S) -> impl IntoResponse {
+    match db::list_snapshots(&state.db, 100).await {
+        Ok(s) => Json(s).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    match db::get_snapshot(&state.db, id).await {
+        Ok(Some(s)) => Json(s).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_snapshot_results(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    match db::get_snapshot_results(&state.db, id).await {
+        Ok(r) => Json(r).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_snapshot_artifacts(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    match db::get_snapshot_artifacts(&state.db, id).await {
+        Ok(a) => Json(a).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_runs(State(state): S) -> impl IntoResponse {
+    match db::list_runs(&state.db, 100).await {
+        Ok(r) => Json(r).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    match db::get_run(&state.db, id).await {
+        Ok(Some(r)) => {
+            let snapshots = db::list_run_snapshots(&state.db, id).await.unwrap_or_default();
+            Json(serde_json::json!({"run": r, "snapshots": snapshots})).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_json_profiles(State(state): S) -> impl IntoResponse {
+    match db::list_profiles(&state.db).await {
+        Ok(p) => Json(p).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreateSnapshotJson {
+    url: Option<String>,
+    urls: Option<Vec<String>>,
+    profile: Option<String>,
+    priority: Option<i32>,
+    tags: Option<Vec<String>>,
+    proxy_chain: Option<String>,
+}
+
+pub async fn api_json_create_snapshot(
+    State(state): S,
+    Json(body): Json<CreateSnapshotJson>,
+) -> impl IntoResponse {
+    let urls: Vec<String> = match (body.url, body.urls) {
+        (_, Some(us)) => us,
+        (Some(u), None) => vec![u],
+        (None, None) => {
+            return (StatusCode::BAD_REQUEST, "must supply url or urls").into_response()
+        }
+    }
+    .into_iter()
+    .filter(|u| !u.is_empty())
+    .collect();
+
+    if urls.is_empty() {
+        return (StatusCode::BAD_REQUEST, "urls must contain at least one non-empty URL")
+            .into_response();
+    }
+
+    let tags = body.tags.unwrap_or_default();
+    let proxy_chain = body.proxy_chain.as_deref().filter(|s| !s.is_empty());
+    match db::create_run_with_snapshots(
+        &state.db,
+        &urls,
+        body.profile.as_deref().unwrap_or("full"),
+        body.priority.unwrap_or(0),
+        &tags,
+        proxy_chain,
+        "api",
+    )
+    .await
+    {
+        Ok((run_id, snap_ids)) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({"run_id": run_id, "snapshot_ids": snap_ids})),
+        )
+            .into_response(),
+        Err(sqlx::Error::RowNotFound) => (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "unknown profile '{}'",
+                body.profile.as_deref().unwrap_or("full")
+            ),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+// --- Export/Import ---
+
+pub async fn api_export(State(state): S) -> impl IntoResponse {
+    match db::export_all(&state.db).await {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_import_snapshots(
+    State(state): S,
+    Json(items): Json<Vec<db::ImportSnapshot>>,
+) -> impl IntoResponse {
+    match db::import_snapshots(&state.db, &items).await {
+        Ok(count) => Json(serde_json::json!({"imported": count})).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+// --- OpenAPI spec ---
+
+pub async fn openapi_spec() -> impl IntoResponse {
+    ([("content-type", "application/json")], OPENAPI_JSON)
+}
+
+// Raw-string with `##` delimiters so `"#/components/..."` $ref values
+// don't terminate the literal at the embedded `#`.
+const OPENAPI_JSON: &str = r##"{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Fetchproxies API",
+    "description": "Privacy archive — runs of snapshots, per-extractor results, proxy-chain health, nitter mint controls",
+    "version": "0.4.0"
+  },
+  "components": {
+    "schemas": {
+      "CreateSnapshot": {
+        "type": "object",
+        "properties": {
+          "url":         { "type": "string", "description": "Single URL to archive (one of url or urls is required)" },
+          "urls":        { "type": "array", "items": { "type": "string" }, "description": "Multiple URLs; all share profile/tags/proxy_chain and land in one run" },
+          "profile":     { "type": "string", "enum": ["full","compare","lightweight","warc_only","media","bd_only"], "default": "full" },
+          "priority":    { "type": "integer", "default": 0, "minimum": -10, "maximum": 10 },
+          "tags":        { "type": "array", "items": { "type": "string" } },
+          "proxy_chain": { "type": "string", "description": "Optional SOCKS URL applied to every fanned-out extractor row, overriding the archiver default (socks5://127.0.0.1:1083)" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/stats":           { "get": { "summary": "Snapshot + artifact counts", "responses": { "200": { "description": "Counts" } } } },
+
+    "/api/v1/snapshots": {
+      "get":  {
+        "summary": "List recent snapshots",
+        "parameters": [
+          { "name": "state", "in": "query", "schema": { "type": "string", "enum": ["pending","running","completed","partial","failed","cancelled"] } },
+          { "name": "url",   "in": "query", "schema": { "type": "string" }, "description": "URL substring (LIKE %x%)" },
+          { "name": "tag",   "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Array of snapshots" } }
+      },
+      "post": {
+        "summary": "Create a run with one or more snapshots (fans out into one archive_result per extractor in the profile)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSnapshot" } } } },
+        "responses":   { "201": { "description": "{ run_id, snapshot_ids[] }" } }
+      }
+    },
+    "/api/v1/snapshots/{id}":           { "get": { "summary": "One snapshot",          "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"Snapshot"}, "404":{"description":"Not found"} } } },
+    "/api/v1/snapshots/{id}/results":   { "get": { "summary": "Per-extractor results", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"Array"} } } },
+    "/api/v1/snapshots/{id}/artifacts": { "get": { "summary": "Artifacts",             "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"Array"} } } },
+
+    "/api/v1/runs":      { "get": { "summary": "List recent runs",                       "responses": { "200": { "description": "Array" } } } },
+    "/api/v1/runs/{id}": { "get": { "summary": "Run detail with embedded snapshots[]", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"{run, snapshots}"}, "404":{"description":"Not found"} } } },
+
+    "/api/v1/profiles": { "get": { "summary": "List profiles", "responses": { "200": { "description": "Array" } } } },
+
+    "/api/v1/proxy/health": { "get": { "summary": "Per-backend health snapshot (raw JSON from proxy-probe)", "responses": { "200": { "description": "Health JSON" } } } },
+
+    "/api/v1/export": {
+      "get": { "summary": "Full DB dump as JSON (runs, snapshots, archive_results, artifacts)",
+               "description": "Use for backup or migration.",
+               "responses": { "200": { "description": "ExportData" } } }
+    },
+    "/api/v1/import/snapshots": {
+      "post": {
+        "summary": "Bulk-create snapshots (each item lands in its own one-snapshot run)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CreateSnapshot" } } } } },
+        "responses":   { "200": { "description": "{ imported: <count> }" } }
+      }
+    },
+
+    "/api/snapshots/{id}/retry":     { "post": { "summary": "Re-queue every failed/skipped result on this snapshot", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /jobs/{id}" } } } },
+    "/api/snapshots/{id}/cancel":    { "post": { "summary": "Mark pending+running results as 'skipped'",            "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /jobs/{id}" } } } },
+    "/api/snapshots/{id}/delete":    { "post": { "summary": "Delete snapshot (cascades results + artifact rows)",   "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /jobs" } } } },
+    "/api/snapshots/{id}/rearchive": { "post": { "summary": "Create a new single-snapshot run with same URL/tags/proxy_chain; extractors inferred from existing results", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /jobs/<new_id>" } } } },
+
+    "/api/results/{id}/retry": { "post": { "summary": "Re-queue a single archive_result row", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to parent /jobs/{snapshot_id}" } } } },
+
+    "/api/runs/{id}/retry":  { "post": { "summary": "Re-queue every failed/skipped result across all snapshots in this run",  "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /runs/{id}" } } } },
+    "/api/runs/{id}/cancel": { "post": { "summary": "Mark every pending/running result in this run as skipped",              "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /runs/{id}" } } } },
+    "/api/runs/{id}/delete": { "post": { "summary": "Delete the run (cascades all snapshots + their results + artifacts)",   "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "303": { "description": "Redirect to /runs" } } } },
+
+    "/api/nitter/trigger": {
+      "post": { "summary": "Force a nitter session-mint run (bypasses the 24h cooldown)",
+                "responses": { "303": { "description": "Redirect to /nitter" } } }
+    },
+    "/api/nitter/override": {
+      "post": {
+        "summary": "Set or clear dashboard credential override for nitter mint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                  "action":      { "type": "string", "enum": ["save","clear"] },
+                  "username":    { "type": "string" },
+                  "password":    { "type": "string", "format": "password" },
+                  "totp_secret": { "type": "string", "description": "Base32 TOTP shared secret" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "303": { "description": "Redirect to /nitter" } }
+      }
+    },
+
+    "/api/jobs": { "post": { "summary": "Create a run via HTML form (newline-separated 'urls' textarea + form-encoded profile/tags/proxy_chain). Auto-prepends batch-YYYY-MM-DD-HHMM to tags.", "responses": { "303": { "description": "Redirect to /runs/{id}" } } } }
+  }
+}"##;
+
+// --- Help page ---
+
+pub async fn help_page() -> impl IntoResponse {
+    templates::HelpTemplate { active: "help" }
+}
+
+// --- Legacy proxy-log endpoints — keep returning data so anything
+// that bookmarked /proxy-log or hits its SSE feed redirects gracefully. ---
+
+pub async fn proxy_log_page() -> impl IntoResponse {
+    Redirect::to("/logs")
+}
+
+pub async fn proxy_log_stream() -> impl IntoResponse {
+    journal_sse(ALL_LOG_UNITS, "JOURNAL_COMMAND_LOGS")
+}

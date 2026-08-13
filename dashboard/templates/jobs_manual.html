@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}manual snapshot — fetchproxies{% endblock %}
+{% block content %}
+<div class="page-main">
+    <div class="v2-crumbs crumbs">
+        <a href="/jobs">all snapshots</a>
+        <span class="crumbs__sep">›</span>
+        <a href="/jobs/new">new</a>
+        <span class="crumbs__sep">›</span>
+        <span>manual</span>
+    </div>
+
+    <header class="hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Submit · manual</span>
+        </div>
+        <h1 class="hero__title">Manual snapshot</h1>
+        <p class="hero__sub">
+            Skip the worker — paste content you already have for a URL. The
+            snapshot is filed as <span class="mono">completed</span> with no
+            extractor rows. Use this for archives the proxy chain can't reach
+            (auth-walled pages, pasted-from-clipboard text) or for anchoring a
+            note against a URL without re-fetching it.
+            Prefer <a href="/jobs/new">/jobs/new</a> for live captures.
+        </p>
+    </header>
+
+    {% match error %}
+    {% when Some with (msg) %}
+    <div class="banner-error">{{ msg }}</div>
+    {% when None %}
+    {% endmatch %}
+
+    <form method="post" action="/api/jobs/manual" style="max-width: 820px;">
+        <div class="field">
+            <label class="field__label" for="url">URL</label>
+            <input class="input" type="url" id="url" name="url" required autofocus
+                   placeholder="https://example.com/article">
+            <p class="field__hint">Required even for fully-pasted content — the URL is the snapshot's identity, used to group re-archives in the URL-history block.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="title">Title</label>
+            <input class="input" type="text" id="title" name="title"
+                   placeholder="Page title for the hero">
+            <p class="field__hint">Optional. Wins over any auto-extracted title for this snapshot.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="html">HTML body</label>
+            <textarea class="textarea" id="html" name="html" rows="6"
+                      placeholder="&lt;article&gt;…&lt;/article&gt;"></textarea>
+            <p class="field__hint">Optional. Stored under the well-known key <span class="mono">html</span> with mime <span class="mono">text/html</span>.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="markdown">Markdown body</label>
+            <textarea class="textarea" id="markdown" name="markdown" rows="6"
+                      placeholder="# Title&#10;&#10;Paragraph…"></textarea>
+            <p class="field__hint">Optional. Stored under the well-known key <span class="mono">markdown</span> with mime <span class="mono">text/markdown</span>.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label">Custom blobs</label>
+            <p class="field__hint" style="margin-top: 0;">
+                Each (key, content) pair becomes one row in
+                <span class="mono">snapshot_user_content</span>. Mime defaults to
+                <span class="mono">text/plain</span>. Keys
+                <span class="mono">html</span> and <span class="mono">markdown</span>
+                are reserved — use the dedicated fields above.
+            </p>
+            <div id="custom-rows" style="display: flex; flex-direction: column; gap: var(--space-3);"></div>
+            <button type="button" class="btn btn--ghost btn--sm" id="add-custom" style="margin-top: var(--space-3);">
+                + add custom blob
+            </button>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="priority">Priority</label>
+            <input class="input" type="number" id="priority" name="priority" value="0" min="-10" max="10" style="max-width: 120px;">
+            <p class="field__hint">Stored on the snapshot row. Manual snapshots aren't worker-claimed, so this only affects sort order on the jobs list.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="tags">Tags</label>
+            <input class="input" type="text" id="tags" name="tags" placeholder="manual, note, election-2026">
+            <p class="field__hint">Comma-separated. Searchable on the jobs page.</p>
+        </div>
+
+        <div class="actions-row" style="margin-top: var(--space-5);">
+            <button class="btn btn--primary" type="submit">{% include "fragments/icons/plus.html" %} File snapshot</button>
+            <a class="btn btn--ghost" href="/jobs/new">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    var rows = document.getElementById('custom-rows');
+    var add = document.getElementById('add-custom');
+    if (!rows || !add) return;
+    function makeRow() {
+        var row = document.createElement('div');
+        row.className = 'manual-custom-row';
+        row.style.display = 'flex';
+        row.style.flexDirection = 'column';
+        row.style.gap = '6px';
+        row.style.padding = 'var(--space-3)';
+        row.style.border = '1px solid var(--color-border)';
+        row.style.borderRadius = 'var(--radius-md)';
+        row.innerHTML = ''
+          + '<div class="row gap-2" style="align-items: center;">'
+          +   '<input class="input mono" name="custom_keys[]" placeholder="key (e.g. notes, transcript)" style="flex: 1;">'
+          +   '<button type="button" class="btn btn--ghost btn--sm" data-remove>remove</button>'
+          + '</div>'
+          + '<textarea class="textarea" name="custom_contents[]" rows="4" placeholder="content"></textarea>';
+        row.querySelector('[data-remove]').addEventListener('click', function () { row.remove(); });
+        rows.appendChild(row);
+    }
+    add.addEventListener('click', makeRow);
+})();
+</script>
+{% endblock %}

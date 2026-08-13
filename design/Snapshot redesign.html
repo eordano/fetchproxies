@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-density="comfy">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fetchproxies — snapshot redesign</title>
+<link rel="stylesheet" href="tokens.css"/>
+<link rel="stylesheet" href="app.css"/>
+<link rel="stylesheet" href="variations.css"/>
+<link rel="stylesheet" href="pages.css"/>
+<style>
+  /* Canvas-level overrides */
+  html, body { margin: 0; padding: 0; min-height: 100vh; background: #14110d; }
+  /* The artboards have their own LocalRock-themed surface; the canvas sits on a
+     deeper, neutral charcoal so the light/dark designs both pop. */
+  body { font-family: var(--font-serif); }
+
+  /* Each artboard renders a complete app, so let it fill its frame */
+  .app { min-height: 100%; }
+
+  /* When the canvas focuses an artboard, the overlay needs the artboard to be
+     sized naturally; nothing extra needed. */
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React + Babel-standalone vendored locally — see vendor/. SHA384s match unpkg @18.3.1 / 7.29.0. -->
+<script src="vendor/react.development.js"></script>
+<script src="vendor/react-dom.development.js"></script>
+<script src="vendor/babel.min.js"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="app-shell.jsx"></script>
+<script type="text/babel" src="v2-preview.jsx"></script>
+<script type="text/babel" src="page-jobs.jsx"></script>
+<script type="text/babel" src="page-proxy.jsx"></script>
+<script type="text/babel" src="page-logs.jsx"></script>
+<script type="text/babel" src="page-help.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>

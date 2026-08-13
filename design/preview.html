@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-density="comfy">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fetchproxies — design preview</title>
+<link rel="stylesheet" href="tokens.css"/>
+<link rel="stylesheet" href="app.css"/>
+<link rel="stylesheet" href="variations.css"/>
+<link rel="stylesheet" href="pages.css"/>
+<style>
+  html, body { margin: 0; padding: 0; min-height: 100vh; background: var(--bg, #14110d); font-family: var(--font-serif); }
+  .app { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="vendor/react.development.js"></script>
+<script src="vendor/react-dom.development.js"></script>
+<script src="vendor/babel.min.js"></script>
+
+<!-- Same component sources used by Snapshot redesign.html, minus the design canvas. -->
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="app-shell.jsx"></script>
+<script type="text/babel" src="v2-preview.jsx"></script>
+<script type="text/babel" src="page-jobs.jsx"></script>
+<script type="text/babel" src="page-proxy.jsx"></script>
+<script type="text/babel" src="page-logs.jsx"></script>
+<script type="text/babel" src="page-help.jsx"></script>
+
+<script type="text/babel">
+  const params = new URLSearchParams(location.search);
+  const page = params.get('page') || 'snapshot';
+  const map = { snapshot: V2, jobs: Jobs, proxy: Proxy, logs: Logs, help: Help };
+  const Comp = map[page] || V2;
+  ReactDOM.createRoot(document.getElementById('root')).render(<Comp/>);
+</script>
+</body>
+</html>

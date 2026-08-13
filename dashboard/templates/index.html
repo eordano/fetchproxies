@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}fetchproxies{% endblock %}
+{% block content %}
+<main class="jobs-main">
+    <header class="jobs-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Overview</span>
+        </div>
+        <h1 class="jobs-hero__title">Snapshot queue</h1>
+        <p class="jobs-hero__sub">
+            Workers claim pending rows in priority order. Recent activity below; jump to <a href="/jobs">/jobs</a> for the full queue or <a href="/jobs/new">/jobs/new</a> to submit.
+        </p>
+    </header>
+
+    <div class="stats-strip">
+        <div class="stats-strip__cell">
+            <span class="label">Pending</span>
+            <strong class="stats-strip__num">{{ stats.snapshots_pending }}</strong>
+        </div>
+        <div class="stats-strip__cell">
+            <span class="label">Running</span>
+            <strong class="stats-strip__num">{{ stats.snapshots_running }}</strong>
+        </div>
+        <div class="stats-strip__cell">
+            <span class="label">Completed</span>
+            <strong class="stats-strip__num">{{ stats.snapshots_completed }}</strong>
+        </div>
+        <div class="stats-strip__cell">
+            <span class="label">Failed</span>
+            <strong class="stats-strip__num">{{ stats.snapshots_failed }}</strong>
+        </div>
+        <div class="stats-strip__cell">
+            <span class="label">Artifacts</span>
+            <strong class="stats-strip__num">{{ stats.total_artifacts }}</strong>
+        </div>
+    </div>
+
+    <div class="v2-section-head">
+        <div>
+            <h2 class="v2-section-head__title">Recent snapshots</h2>
+            <p class="muted sans" style="font-size: 13px;">Latest five — refreshes every 5 s.</p>
+        </div>
+        <a class="btn btn--ghost btn--sm" href="/jobs">View all →</a>
+    </div>
+
+    <div class="jobs-table-wrap" hx-get="/fragments/job-table" hx-trigger="every 5s" hx-swap="innerHTML">
+        {% include "fragments/job_table.html" %}
+    </div>
+</main>
+{% endblock %}

@@ -1,0 +1,77 @@
+<div class="proxy-summary">
+    <div class="proxy-stat">
+        <span class="label">Online</span>
+        <strong class="proxy-stat__num">{{ health.ok_count() }}<span class="muted">/{{ health.total() }}</span></strong>
+        <span class="muted" style="font-family: var(--font-sans); font-size: 12px;">backends responding</span>
+    </div>
+    <div class="proxy-stat">
+        <span class="label">Last probe</span>
+        <strong class="proxy-stat__num mono" style="font-size: 18px; font-weight: 500;">
+            {{ health.checked_at_display() }}
+        </strong>
+        {% match health.target_url %}
+        {% when Some with (u) %}<span class="muted" style="font-family: var(--font-sans); font-size: 12px;">via <span class="mono">{{ u }}</span></span>
+        {% when None %}<span class="muted" style="font-family: var(--font-sans); font-size: 12px;">no probe yet</span>
+        {% endmatch %}
+    </div>
+    <div class="proxy-stat">
+        <span class="label">Active chain</span>
+        <strong class="proxy-stat__chain mono">
+            archiver {% include "fragments/icons/arrow_right.html" %} mullvad {% include "fragments/icons/arrow_right.html" %} exit
+        </strong>
+        <span class="muted" style="font-family: var(--font-sans); font-size: 12px;">9× mullvad rotation, then bright-data</span>
+    </div>
+</div>
+
+{% if health.backends.is_empty() %}
+<div class="empty">No health snapshot yet — waiting for the first proxy-probe run (boots ~60 s after VM start).</div>
+{% else %}
+<div class="proxy-table-wrap">
+    <table class="tbl proxy-table">
+        <thead>
+            <tr>
+                <th style="width: 160px;">Backend</th>
+                <th style="width: 90px;">Port</th>
+                <th style="width: 110px;">Status</th>
+                <th style="width: 70px;">HTTP</th>
+                <th>Latency</th>
+                <th style="width: 180px;">Last checked</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for b in health.backends %}
+            <tr>
+                <td>
+                    <div class="row gap-2">
+                        <span class="mono proxy-backend">{{ b.name }}</span>
+                        {% if b.is_fallback() %}<span class="proxy-fallback">fallback</span>{% endif %}
+                    </div>
+                </td>
+                <td class="mono muted">{{ b.port_display() }}</td>
+                <td>
+                    {% if b.is_ok() %}
+                        <span class="pill pill--success"><span class="pill__dot"></span>ok</span>
+                    {% else if b.is_blocked() %}
+                        <span class="pill pill--danger"><span class="pill__dot"></span>blocked</span>
+                    {% else if b.is_timeout() %}
+                        <span class="pill pill--warning"><span class="pill__dot"></span>timeout</span>
+                    {% else %}
+                        <span class="pill pill--neutral"><span class="pill__dot"></span>{{ b.status }}</span>
+                    {% endif %}
+                </td>
+                <td class="mono">{{ b.http_code_display() }}</td>
+                <td>
+                    <div class="proxy-lat">
+                        <div class="proxy-lat__bar">
+                            <span class="proxy-lat__fill" style="width: {{ b.latency_pct(health.max_latency_ms()) }}%;"></span>
+                        </div>
+                        <span class="mono proxy-lat__num">{{ b.latency_display() }}</span>
+                    </div>
+                </td>
+                <td class="mono muted" style="font-size: 12.5px;">{{ b.checked_at_display() }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

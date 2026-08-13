@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}runs — fetchproxies{% endblock %}
+{% block content %}
+<main class="jobs-main">
+    <header class="jobs-hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Submissions</span>
+        </div>
+        <h1 class="jobs-hero__title">Runs</h1>
+        <p class="jobs-hero__sub">
+            A run is a batch of snapshots created together. Single-URL submissions are a one-snapshot run; multi-URL textareas group naturally; <em>re-archive</em> creates its own one-snapshot run.
+        </p>
+    </header>
+
+    {% if runs.is_empty() %}
+    <div class="jobs-empty">No runs yet — submit one at <a href="/jobs/new">/jobs/new</a>.</div>
+    {% else %}
+    <div class="jobs-table-wrap">
+        <table class="tbl jobs-table">
+            <thead>
+                <tr>
+                    <th style="width: 80px;">ID</th>
+                    <th>Tags</th>
+                    <th style="width: 150px;">Created by</th>
+                    <th style="width: 200px;">Created</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in runs %}
+                <tr class="jobs-row" data-href="/runs/{{ r.id }}">
+                    <td class="mono"><a class="jobs-url" href="/runs/{{ r.id }}">#{{ r.id }}</a></td>
+                    <td>
+                        <div class="jobs-tags">
+                            {% if r.tags.is_empty() %}
+                                <span class="muted">—</span>
+                            {% else %}
+                                {% for t in r.tags %}<a class="jobs-tag" href="/jobs?tag={{ t }}">{{ t }}</a>{% endfor %}
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="mono muted">{{ r.created_by }}</td>
+                    <td class="mono muted" style="font-size: 12.5px;">{{ r.created_at.format("%Y-%m-%d %H:%M:%S") }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</main>
+{% endblock %}

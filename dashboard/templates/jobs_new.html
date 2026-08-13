@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}new submission — fetchproxies{% endblock %}
+{% block content %}
+<div class="page-main">
+    <div class="v2-crumbs crumbs">
+        <a href="/jobs">all snapshots</a>
+        <span class="crumbs__sep">›</span>
+        <span>new</span>
+    </div>
+
+    <header class="hero">
+        <div class="row gap-3" style="margin-bottom: 8px;">
+            <span class="label">Submit</span>
+        </div>
+        <h1 class="hero__title">Archive URLs</h1>
+        <p class="hero__sub">
+            Creates one <a href="/runs">run</a>, plus one snapshot per non-empty line, plus one extractor row per snapshot from the chosen profile. Workers pick them up immediately.
+        </p>
+    </header>
+
+    {% match error %}
+    {% when Some with (msg) %}
+    <div class="banner-error">{{ msg }}</div>
+    {% when None %}
+    {% endmatch %}
+
+    <form method="post" action="/api/jobs" style="max-width: 720px;">
+        <div class="field">
+            <label class="field__label" for="urls">URLs</label>
+            <textarea class="textarea" id="urls" name="urls" rows="6" required autofocus
+                      placeholder="https://example.com/article&#10;https://other.com/page&#10;…one per line"></textarea>
+            <p class="field__hint">One URL per line. Duplicates within a single submission are silently collapsed (a unique index on <span class="mono">(run_id, url)</span> dedupes the batch).</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="profile">Profile</label>
+            <select class="select" id="profile" name="profile" style="min-width: 320px;">
+                <option value="full" selected>full — wget_warc + monolith + screenshots (mobile/tablet/desktop/1920) + readability + pdf</option>
+                <option value="compare">compare — full + bd_screenshot (mullvad vs. bright-data)</option>
+                <option value="screenshots">screenshots — mobile + tablet + desktop + 1920 (no archive)</option>
+                <option value="lightweight">lightweight — monolith + readability</option>
+                <option value="warc_only">warc_only — wget_warc only (full http provenance)</option>
+                <option value="media">media — yt_dlp (video / audio)</option>
+                <option value="bd_only">bd_only — bd_screenshot direct</option>
+            </select>
+            <p class="field__hint">A profile fans out into multiple extractor rows per snapshot. Each row queues independently and produces its own artifact.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="priority">Priority</label>
+            <input class="input" type="number" id="priority" name="priority" value="0" min="-10" max="10" style="max-width: 120px;">
+            <p class="field__hint">Workers claim the highest priority first. <span class="mono">0</span> default; positive jumps ahead, negative drops to the back.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="tags">Tags</label>
+            <input class="input" type="text" id="tags" name="tags" placeholder="news, sample, election-2026">
+            <p class="field__hint">Comma-separated. Searchable on the jobs page (<span class="mono">?tag=&lt;name&gt;</span>). This submission gets its own run id — you can also filter by it later via <span class="mono">/jobs?run=&lt;id&gt;</span> or open <span class="mono">/runs/&lt;id&gt;</span>.</p>
+        </div>
+
+        <div class="field">
+            <label class="field__label" for="proxy_chain">Proxy chain override <span class="muted" style="font-weight: normal; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+            <input class="input" type="text" id="proxy_chain" name="proxy_chain" placeholder="socks5://10.0.2.2:1081">
+            <p class="field__hint">Applies one SOCKS URL to every extractor across every snapshot in this submission, overriding the archiver default (<span class="mono">socks5://127.0.0.1:1083</span>). Useful examples:<br>
+            • <span class="mono">socks5://10.0.2.2:1081</span> — reuse the nitter chain<br>
+            • <span class="mono">socks5://127.0.0.1:10819</span> — force every extractor through bright-data<br>
+            • <span class="mono">socks5://127.0.0.1:1082</span> — reuse the redlib chain</p>
+        </div>
+
+        <div class="actions-row" style="margin-top: var(--space-5);">
+            <button class="btn btn--primary" type="submit">{% include "fragments/icons/plus.html" %} Submit</button>
+            <span class="muted" style="font-family: var(--font-sans); font-size: 13px;">Redirects to the new run page. Open any snapshot to retry / re-archive / browse artifacts.</span>
+        </div>
+    </form>
+
+    <p class="muted sans" style="font-size: 13px; margin-top: var(--space-6); max-width: 720px;">
+        Already have the content? File a
+        <a href="/jobs/manual">manual snapshot</a> with title + HTML/markdown + custom blobs — no worker fetch.
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+/target
+result
+result-*
+*.sqlite
+*.sqlite-wal
+.direnv
+node_modules/
