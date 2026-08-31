@@ -62,7 +62,7 @@ const Help = () => {
             <section id="fronted" className="help-section">
               <h2>Fronted services</h2>
               <p className="help-p--lead">
-                URLs are transparent. <span className="mono">twitter.example.org/elonmusk</span> works the same way <span className="mono">twitter.com/elonmusk</span> does — same path, same query, just routed through a private frontend.
+                URLs are transparent. <span className="mono">twitter.example.com/elonmusk</span> works the same way <span className="mono">twitter.com/elonmusk</span> does — same path, same query, just routed through a private frontend.
               </p>
               <div className="help-tbl-wrap">
                 <table className="tbl help-tbl">
@@ -70,22 +70,22 @@ const Help = () => {
                     <tr><th style={{width:"22%"}}>Service</th><th style={{width:"30%"}}>vhost</th><th>Backend</th></tr>
                   </thead>
                   <tbody>
-                    <tr><td>Twitter</td><td className="mono">twitter.example.org</td><td>nitter — cookie sessions minted via Bright Data scraping browser</td></tr>
-                    <tr><td>Reddit</td><td className="mono">reddit.example.org</td><td>redlib — patched for <span className="mono">ALL_PROXY</span> rotation</td></tr>
-                    <tr><td>Wikipedia</td><td className="mono">wikipedia.example.org</td><td>kiwix-serve — offline <span className="mono">.zim</span> corpus on <span className="mono">/persist/kiwix</span></td></tr>
-                    <tr><td>Torrents</td><td className="mono">torrent.example.org</td><td>transmission — pinned to a single Mullvad tunnel (<span className="mono">100.64/24</span> only)</td></tr>
-                    <tr><td>Archive UI</td><td className="mono">fetch.example.org</td><td>this dashboard</td></tr>
-                    <tr><td>Artifacts</td><td className="mono">fetch.example.org/artifacts/results/&lt;id&gt;/</td><td>nginx autoindex over <span className="mono">/tank/archive/fetch/results</span></td></tr>
-                    <tr><td>Public proxy</td><td className="mono">proxy.example.org</td><td>SOCKS5 / HTTP / HTTPS forward proxy onto the archiver chain</td></tr>
+                    <tr><td>Twitter</td><td className="mono">twitter.example.com</td><td>nitter — cookie sessions minted via Bright Data scraping browser</td></tr>
+                    <tr><td>Reddit</td><td className="mono">reddit.example.com</td><td>redlib — patched for <span className="mono">ALL_PROXY</span> rotation</td></tr>
+                    <tr><td>Wikipedia</td><td className="mono">wikipedia.example.com</td><td>kiwix-serve — offline <span className="mono">.zim</span> corpus on <span className="mono">/persist/kiwix</span></td></tr>
+                    <tr><td>Torrents</td><td className="mono">torrent.example.com</td><td>transmission — pinned to a single Mullvad tunnel (<span className="mono">100.64/24</span> only)</td></tr>
+                    <tr><td>Archive UI</td><td className="mono">fetch.example.com</td><td>this dashboard</td></tr>
+                    <tr><td>Artifacts</td><td className="mono">fetch.example.com/artifacts/results/&lt;id&gt;/</td><td>nginx autoindex over <span className="mono">/tank/archive/fetch/results</span></td></tr>
+                    <tr><td>Public proxy</td><td className="mono">proxy.example.com</td><td>SOCKS5 / HTTP / HTTPS forward proxy onto the archiver chain</td></tr>
                   </tbody>
                 </table>
               </div>
             </section>
 
             <section id="proxy" className="help-section">
-              <h2>Public proxy <span className="help-h-mono">proxy.example.org</span></h2>
+              <h2>Public proxy <span className="help-h-mono">proxy.example.com</span></h2>
               <p>
-                Use the host as a forward proxy from any tailnet host. All three flavours fan into the same in-guest archiver chain (Mullvad rotation → Bright Data fallback). Bound to <span className="mono">127.0.0.1</span> + <span className="mono">100.x.y.z</span> only — never publicly reachable.
+                Use the host as a forward proxy from any tailnet host. All three flavours fan into the same in-guest archiver chain (Mullvad rotation → Bright Data fallback). Bound to <span className="mono">127.0.0.1</span> + the host's tailnet address (<span className="mono">100.x.y.z</span>) only — never publicly reachable.
               </p>
               <div className="help-tbl-wrap">
                 <table className="tbl help-tbl">
@@ -93,8 +93,8 @@ const Help = () => {
                   <tbody>
                     <tr><td>SOCKS5</td><td className="mono">100.x.y.z:1080</td><td>plaintext over tailscale (already encrypted hop-by-hop)</td></tr>
                     <tr><td>HTTP forward</td><td className="mono">100.x.y.z:8118</td><td>handles <span className="mono">http://</span> and CONNECT-tunneled <span className="mono">https://</span></td></tr>
-                    <tr><td>HTTPS forward</td><td className="mono">proxy.example.org:8443</td><td>TLS-terminated with the example.org wildcard cert</td></tr>
-                    <tr><td>Browser GET</td><td className="mono">https://proxy.example.org/</td><td>302 → fetch.example.org (so a stray browser hit doesn't hang)</td></tr>
+                    <tr><td>HTTPS forward</td><td className="mono">proxy.example.com:8443</td><td>TLS-terminated with the example.com wildcard cert</td></tr>
+                    <tr><td>Browser GET</td><td className="mono">https://proxy.example.com/</td><td>302 → fetch.example.com (so a stray browser hit doesn't hang)</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -107,7 +107,7 @@ const Help = () => {
                 { c: "curl -x http://100.x.y.z:8118 https://api.ipify.org" },
                 { c: "" },
                 { c: "# HTTPS forward proxy (TLS-wrapped)", k: "comment" },
-                { c: "curl -x https://proxy.example.org:8443 https://api.ipify.org" },
+                { c: "curl -x https://proxy.example.com:8443 https://api.ipify.org" },
               ]}/>
             </section>
 
@@ -175,7 +175,7 @@ const Help = () => {
                 <table className="tbl help-tbl">
                   <thead><tr><th>Chain</th><th>Port</th><th>Backends (order = preference)</th></tr></thead>
                   <tbody>
-                    <tr><td className="mono">nitter</td><td className="mono">1081</td><td className="mono">tailscale-ams → mullvad-{`{de-dus,ch-zrh,at-vie,br-all,us-bos,us-mia}`}</td></tr>
+                    <tr><td className="mono">nitter</td><td className="mono">1081</td><td className="mono">vpn-exit → mullvad-{`{de-dus,ch-zrh,at-vie,br-all,us-bos,us-mia}`}</td></tr>
                     <tr><td className="mono">redlib</td><td className="mono">1082</td><td className="mono">mullvad-us-{`{bos,mia,sjc}`} → mullvad-{`{de-dus,ch-zrh,at-vie}`}</td></tr>
                     <tr><td className="mono">archiver</td><td className="mono">1083</td><td className="mono">9× mullvad rotation, then bright-data fallback</td></tr>
                     <tr><td className="mono">brightdata-relay</td><td className="mono">10819</td><td className="mono">auth-injecting forward to brd.superproxy.io:33335</td></tr>
@@ -210,12 +210,12 @@ const Help = () => {
 
               <CodeBlock title="Submit via curl" lines={[
                 { c: "# single URL", k: "comment" },
-                { c: "curl -sX POST https://fetch.example.org/api/v1/snapshots \\" },
+                { c: "curl -sX POST https://fetch.example.com/api/v1/snapshots \\" },
                 { c: "  -H 'content-type: application/json' \\" },
                 { c: `  -d '{"url":"https://example.com","profile":"compare","tags":["sample"]}'` },
                 { c: "" },
                 { c: "# batch (one run, many snapshots)", k: "comment" },
-                { c: "curl -sX POST https://fetch.example.org/api/v1/snapshots \\" },
+                { c: "curl -sX POST https://fetch.example.com/api/v1/snapshots \\" },
                 { c: "  -H 'content-type: application/json' \\" },
                 { c: `  -d '{"urls":["https://a.com","https://b.com"],"profile":"full"}'` },
               ]}/>

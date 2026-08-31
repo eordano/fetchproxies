@@ -142,7 +142,7 @@
       882
     ];
     backends = {
-      tailscale-ams = {
+      vpn-exit = {
         type = "socks";
         upstream = "10.0.2.2:10890";
       };

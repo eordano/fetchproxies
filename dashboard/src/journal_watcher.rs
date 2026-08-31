@@ -1,28 +1,3 @@
-// Tail invidious-companion's journal and surface OAuth state in the DB.
-//
-// When the operator enables OAuth on /youtube, the supervisor flips
-// YOUTUBE_SESSION_OAUTH_ENABLED=true in companion-overrides.env, the
-// path unit restarts companion, and companion boots into the
-// youtubei.js OAuth device flow. Companion's main.ts emits these
-// exact lines (see invidious-companion@d5504eb src/main.ts:138-142):
-//
-//   [INFO] [OAUTH] Go to <verification_url> in your browser and enter
-//                  code <user_code> to authenticate.
-//   [INFO] [OAUTH] Sign in successful!
-//   [INFO] [OAUTH] Credentials updated.
-//
-// We tail journalctl, regex those three patterns, and write through
-// to youtube_oauth_pending / youtube_companion_status. The dashboard
-// page reads from those tables — no Google API plumbing on our side,
-// no shared OAuth client credentials, no extra egress: companion is
-// already wired up to Google through the proxy chain (and once the
-// operator has signed in, it switches to direct via the egress
-// dropdown).
-//
-// The watcher restarts itself on journalctl exit. journalctl --follow
-// blocks indefinitely, so the inner loop only exits if the child dies
-// (kernel rotation, unit re-mask, etc.) — outer loop sleeps briefly
-// and respawns.
 
 use chrono::{Duration, Utc};
 use regex::Regex;
@@ -32,10 +7,6 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 pub fn spawn(pool: PgPool) {
-    // Skip the watcher entirely when the operator opts out — used by
-    // dev/preview.sh, which has no invidious-companion unit on the
-    // host and would otherwise spin spawning journalctl in a tight
-    // retry loop.
     if std::env::var("JOURNAL_WATCHER_DISABLE")
         .map(|v| !v.is_empty() && v != "0" && v != "false")
         .unwrap_or(false)
@@ -90,17 +61,11 @@ async fn run_once(
     let mut lines = reader.lines();
 
     while let Some(line) = lines.next_line().await? {
-        // Cheap fast-path: only inspect lines tagged as OAuth.
         if !line.contains("[OAUTH]") {
             continue;
         }
 
         if let Some(caps) = auth_pending.captures(&line) {
-            // youtubei.js's device-flow expiry is 30 min for the TV
-            // client. We don't get an explicit ttl on the event, so
-            // estimate conservatively — the row gets cleared either
-            // when companion logs success or when the operator hits
-            // the cancel button on the page.
             let url = caps.name("url").map(|m| m.as_str()).unwrap_or("");
             let code = caps.name("code").map(|m| m.as_str()).unwrap_or("");
             let expires_at = Utc::now() + Duration::minutes(30);
@@ -131,14 +96,6 @@ async fn run_once(
         }
 
         if auth_success.is_match(&line) || creds_updated.is_match(&line) {
-            // Either path means companion now has a valid session.
-            // Clear the in-flight row + mark status as ready. We
-            // don't have the refresh_token here (companion stashes
-            // it in its own Deno KV cache); auth_method stays
-            // 'oauth' so the supervisor keeps emitting
-            // YOUTUBE_SESSION_OAUTH_ENABLED=true on next restart and
-            // companion picks up the cached creds without bothering
-            // the user again.
             let _ = sqlx::query("DELETE FROM youtube_oauth_pending WHERE id = 1")
                 .execute(pool)
                 .await;

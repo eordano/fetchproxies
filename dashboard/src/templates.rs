@@ -1,13 +1,6 @@
 use askama::Template;
 use crate::db;
 
-// --- Full page templates ---
-//
-// Every page template carries `active: &'static str` so base.html can
-// highlight the matching link in the appbar. Possible values:
-//   "jobs", "runs", "proxy", "nitter", "youtube", "logs", "proxylog", "help"
-// (or empty when no nav item should be marked, e.g. /).
-
 #[derive(Template)]
 #[template(path = "index.html")]
 pub struct IndexTemplate {
@@ -126,8 +119,6 @@ pub struct LogsTemplate {
 pub struct HelpTemplate {
     pub active: &'static str,
 }
-
-// --- Htmx fragment templates ---
 
 #[derive(Template)]
 #[template(path = "fragments/job_table.html")]

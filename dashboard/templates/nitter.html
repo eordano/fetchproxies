@@ -15,17 +15,17 @@
     <div class="v2-section-head">
         <div>
             <h2 class="v2-section-head__title">Egress mode</h2>
-            <p class="v2-section-head__sub">Where nitter's outbound Twitter traffic exits. Once a working session JSONL is in place, the source IP no longer matters — Twitter trusts the session cookie. Switch to <span class="mono">direct</span> to bypass the proxy chain (and the tailscale exit hop) and exit through the host's NAT gateway.</p>
+            <p class="v2-section-head__sub">Where nitter's outbound Twitter traffic exits. Once a working session JSONL is in place, the source IP no longer matters — Twitter trusts the session cookie. Switch to <span class="mono">direct</span> to bypass the proxy chain (and the VPN exit hop) and exit through the host's NAT gateway.</p>
         </div>
     </div>
     <form method="post" action="/api/services/nitter/egress" class="actions-row">
         <select class="select" name="mode">
             {% match egress %}
             {% when Some with (e) %}
-                <option value="proxy_chain"{% if e.mode == "proxy_chain" %} selected{% endif %}>proxy_chain (mullvad/tailscale-ams)</option>
+                <option value="proxy_chain"{% if e.mode == "proxy_chain" %} selected{% endif %}>proxy_chain (mullvad/vpn-exit)</option>
                 <option value="direct"{% if e.mode == "direct" %} selected{% endif %}>direct (host WAN)</option>
             {% when None %}
-                <option value="proxy_chain" selected>proxy_chain (mullvad/tailscale-ams)</option>
+                <option value="proxy_chain" selected>proxy_chain (mullvad/vpn-exit)</option>
                 <option value="direct">direct (host WAN)</option>
             {% endmatch %}
         </select>

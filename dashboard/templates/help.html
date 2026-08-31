@@ -44,7 +44,7 @@
             <section id="fronted" class="help-section">
                 <h2>Fronted services</h2>
                 <p class="help-p--lead">
-                    URLs are transparent. <span class="mono">twitter.example.org/elonmusk</span> works the same way <span class="mono">twitter.com/elonmusk</span> does — same path, same query, just routed through a private frontend.
+                    URLs are transparent. <span class="mono">twitter.example.com/elonmusk</span> works the same way <span class="mono">twitter.com/elonmusk</span> does — same path, same query, just routed through a private frontend.
                 </p>
                 <div class="help-tbl-wrap">
                     <table class="tbl help-tbl">
@@ -52,22 +52,22 @@
                             <tr><th style="width: 22%;">Service</th><th style="width: 30%;">vhost</th><th>Backend</th></tr>
                         </thead>
                         <tbody>
-                            <tr data-href="https://twitter.example.org"><td>Twitter</td><td class="mono"><a href="https://twitter.example.org" target="_blank" rel="noopener">twitter.example.org</a></td><td>nitter — cookie sessions minted via Bright Data scraping browser</td></tr>
-                            <tr data-href="https://reddit.example.org"><td>Reddit</td><td class="mono"><a href="https://reddit.example.org" target="_blank" rel="noopener">reddit.example.org</a></td><td>redlib — patched for <span class="mono">ALL_PROXY</span> rotation</td></tr>
-                            <tr data-href="https://wikipedia.example.org"><td>Wikipedia</td><td class="mono"><a href="https://wikipedia.example.org" target="_blank" rel="noopener">wikipedia.example.org</a></td><td>kiwix-serve — offline <span class="mono">.zim</span> corpus on <span class="mono">/persist/kiwix</span></td></tr>
-                            <tr data-href="https://torrent.example.org"><td>Torrents</td><td class="mono"><a href="https://torrent.example.org" target="_blank" rel="noopener">torrent.example.org</a></td><td>transmission — pinned to a single Mullvad tunnel (<span class="mono">100.64/24</span> only)</td></tr>
-                            <tr data-href="https://fetch.example.org"><td>Archive UI</td><td class="mono"><a href="https://fetch.example.org" target="_blank" rel="noopener">fetch.example.org</a></td><td>this dashboard</td></tr>
-                            <tr data-href="https://fetch.example.org/artifacts/results/"><td>Artifacts</td><td class="mono"><a href="https://fetch.example.org/artifacts/results/" target="_blank" rel="noopener">fetch.example.org/artifacts/results/&lt;id&gt;/</a></td><td>garage S3 web (bucket <span class="mono">fetchproxies-artifacts</span>) — workers upload <span class="mono">index.html</span> alongside files</td></tr>
-                            <tr data-href="https://proxy.example.org"><td>Public proxy</td><td class="mono"><a href="https://proxy.example.org" target="_blank" rel="noopener">proxy.example.org</a></td><td>SOCKS5 / HTTP / HTTPS forward proxy onto the archiver chain</td></tr>
+                            <tr data-href="https://twitter.example.com"><td>Twitter</td><td class="mono"><a href="https://twitter.example.com" target="_blank" rel="noopener">twitter.example.com</a></td><td>nitter — cookie sessions minted via Bright Data scraping browser</td></tr>
+                            <tr data-href="https://reddit.example.com"><td>Reddit</td><td class="mono"><a href="https://reddit.example.com" target="_blank" rel="noopener">reddit.example.com</a></td><td>redlib — patched for <span class="mono">ALL_PROXY</span> rotation</td></tr>
+                            <tr data-href="https://wikipedia.example.com"><td>Wikipedia</td><td class="mono"><a href="https://wikipedia.example.com" target="_blank" rel="noopener">wikipedia.example.com</a></td><td>kiwix-serve — offline <span class="mono">.zim</span> corpus on <span class="mono">/persist/kiwix</span></td></tr>
+                            <tr data-href="https://torrent.example.com"><td>Torrents</td><td class="mono"><a href="https://torrent.example.com" target="_blank" rel="noopener">torrent.example.com</a></td><td>transmission — pinned to a single Mullvad tunnel (<span class="mono">100.64/24</span> only)</td></tr>
+                            <tr data-href="https://fetch.example.com"><td>Archive UI</td><td class="mono"><a href="https://fetch.example.com" target="_blank" rel="noopener">fetch.example.com</a></td><td>this dashboard</td></tr>
+                            <tr data-href="https://fetch.example.com/artifacts/results/"><td>Artifacts</td><td class="mono"><a href="https://fetch.example.com/artifacts/results/" target="_blank" rel="noopener">fetch.example.com/artifacts/results/&lt;id&gt;/</a></td><td>garage S3 web (bucket <span class="mono">fetchproxies-artifacts</span>) — workers upload <span class="mono">index.html</span> alongside files</td></tr>
+                            <tr data-href="https://proxy.example.com"><td>Public proxy</td><td class="mono"><a href="https://proxy.example.com" target="_blank" rel="noopener">proxy.example.com</a></td><td>SOCKS5 / HTTP / HTTPS forward proxy onto the archiver chain</td></tr>
                         </tbody>
                     </table>
                 </div>
             </section>
 
             <section id="proxy" class="help-section">
-                <h2>Public proxy <span class="help-h-mono">proxy.example.org</span></h2>
+                <h2>Public proxy <span class="help-h-mono">proxy.example.com</span></h2>
                 <p>
-                    Use the host as a forward proxy from any tailnet host. All three flavours fan into the same in-guest archiver chain (Mullvad rotation → Bright Data fallback). Bound to <span class="mono">127.0.0.1</span> + <span class="mono">100.x.y.z</span> only — never publicly reachable.
+                    Use the host as a forward proxy from any tailnet host. All three flavours fan into the same in-guest archiver chain (Mullvad rotation → Bright Data fallback). Bound to <span class="mono">127.0.0.1</span> + the host's tailnet address (<span class="mono">100.x.y.z</span>) only — never publicly reachable.
                 </p>
                 <div class="help-tbl-wrap">
                     <table class="tbl help-tbl">
@@ -75,8 +75,8 @@
                         <tbody>
                             <tr><td>SOCKS5</td><td class="mono">100.x.y.z:1080</td><td>plaintext over tailscale (already encrypted hop-by-hop)</td></tr>
                             <tr><td>HTTP forward</td><td class="mono">100.x.y.z:8118</td><td>handles <span class="mono">http://</span> and CONNECT-tunneled <span class="mono">https://</span></td></tr>
-                            <tr><td>HTTPS forward</td><td class="mono">proxy.example.org:8443</td><td>TLS-terminated with the <span class="mono">example.org</span> wildcard cert</td></tr>
-                            <tr><td>Browser GET</td><td class="mono">https://proxy.example.org/</td><td>302 → fetch.example.org (so a stray browser hit doesn't hang)</td></tr>
+                            <tr><td>HTTPS forward</td><td class="mono">proxy.example.com:8443</td><td>TLS-terminated with the <span class="mono">example.com</span> wildcard cert</td></tr>
+                            <tr><td>Browser GET</td><td class="mono">https://proxy.example.com/</td><td>302 → fetch.example.com (so a stray browser hit doesn't hang)</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -93,7 +93,7 @@ curl --socks5 100.x.y.z:1080 https://api.ipify.org
 curl -x http://100.x.y.z:8118 https://api.ipify.org
 
 <span class="is-comment"># HTTPS forward proxy (TLS-wrapped)</span>
-curl -x https://proxy.example.org:8443 https://api.ipify.org</code></pre>
+curl -x https://proxy.example.com:8443 https://api.ipify.org</code></pre>
                 </div>
             </section>
 
@@ -164,7 +164,7 @@ curl -x https://proxy.example.org:8443 https://api.ipify.org</code></pre>
                     <table class="tbl help-tbl">
                         <thead><tr><th>Chain</th><th>Port</th><th>Backends (order = preference)</th></tr></thead>
                         <tbody>
-                            <tr><td class="mono">nitter</td><td class="mono">1081</td><td class="mono">tailscale-ams → mullvad-{de-dus,ch-zrh,at-vie,br-all,us-bos,us-mia}</td></tr>
+                            <tr><td class="mono">nitter</td><td class="mono">1081</td><td class="mono">vpn-exit → mullvad-{de-dus,ch-zrh,at-vie,br-all,us-bos,us-mia}</td></tr>
                             <tr><td class="mono">redlib</td><td class="mono">1082</td><td class="mono">mullvad-us-{bos,mia,sjc} → mullvad-{de-dus,ch-zrh,at-vie}</td></tr>
                             <tr><td class="mono">archiver</td><td class="mono">1083</td><td class="mono">9× mullvad rotation, then bright-data fallback</td></tr>
                             <tr><td class="mono">brightdata-relay</td><td class="mono">10819</td><td class="mono">auth-injecting forward to brd.superproxy.io:33335</td></tr>
@@ -204,17 +204,17 @@ curl -x https://proxy.example.org:8443 https://api.ipify.org</code></pre>
                         <button class="btn btn--ghost btn--sm" type="button">{% include "fragments/icons/copy.html" %}</button>
                     </div>
                     <pre class="codeblock__pre"><code><span class="is-comment"># single URL</span>
-curl -sX POST https://fetch.example.org/api/v1/snapshots \
+curl -sX POST https://fetch.example.com/api/v1/snapshots \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.com","profile":"compare","tags":["sample"]}'
 
 <span class="is-comment"># batch (one run, many snapshots)</span>
-curl -sX POST https://fetch.example.org/api/v1/snapshots \
+curl -sX POST https://fetch.example.com/api/v1/snapshots \
   -H 'content-type: application/json' \
   -d '{"urls":["https://a.com","https://b.com"],"profile":"full"}'
 
 <span class="is-comment"># manual (no worker fetch — you supply the content)</span>
-curl -sX POST https://fetch.example.org/api/v1/snapshots/manual \
+curl -sX POST https://fetch.example.com/api/v1/snapshots/manual \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.com/note","title":"My note",
        "html":"&lt;article&gt;…&lt;/article&gt;",

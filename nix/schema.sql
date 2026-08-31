@@ -4,8 +4,8 @@
 --
 -- Connection expectations (set by the Rust dashboard and worker.sh):
 --   the schema is applied with `psql --single-transaction` against the
---   archive-owner role on host postgres (10.0.2.2:5432 from inside the
---   microvm via slirp4netns NAT).
+--   deployment's dedicated postgres role, reached over the microvm's
+--   slirp4netns NAT (10.0.2.2:5432).
 --
 -- Conventions:
 --   - "Enums" are CHECK constraints over TEXT.

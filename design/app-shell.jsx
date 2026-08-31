@@ -5,9 +5,9 @@ const { useState, useEffect } = React;
 const SNAPSHOT = {
   id: 1,
   runId: 1,
-  url: "https://eordano.com",
-  hostname: "eordano.com",
-  title: "Martín Eordano — Notes & writing",
+  url: "https://example.com",
+  hostname: "example.com",
+  title: "Example Site — Notes & writing",
   priority: 0,
   tags: [],
   createdAt: "2026-04-28 20:56:11",

@@ -26,7 +26,7 @@ in
 
     domain = mkOption {
       type = types.str;
-      default = "youtube.example.org";
+      default = "youtube.example.com";
       description = "Public hostname for invidious.";
     };
 
@@ -44,8 +44,26 @@ in
 
     companionKey = mkOption {
       type = types.str;
-      default = "fetchproxiesiv01";
-      description = "Shared secret between invidious and companion.";
+      default = "CHANGEME-dev-key";
+      description = ''
+        Dev-only fallback for the shared secret between invidious and
+        companion. Must be exactly 16 characters (invidious-companion's
+        SERVER_SECRET_KEY). Only used when companionKeyFile is absent or
+        empty; real deployments populate companionKeyFile instead.
+      '';
+    };
+
+    companionKeyFile = mkOption {
+      type = types.str;
+      default = "/var/lib/fp-secrets/invidious-companion-env";
+      description = ''
+        EnvironmentFile (`SERVER_SECRET_KEY=<16 chars>`, e.g. from
+        `openssl rand -hex 8`) holding the real shared secret on the
+        deployment host. Read at service start by both sides: the companion
+        loads it as an EnvironmentFile, and an ExecStartPre renders it into
+        an extraSettingsFile for invidious. The secret never enters the nix
+        store or this repo.
+      '';
     };
 
     companionUid = mkOption {
@@ -126,6 +144,7 @@ in
           }
         ];
       };
+      extraSettingsFile = "/var/lib/invidious/companion-key.json";
     };
 
     systemd.services.invidious = {
@@ -139,6 +158,20 @@ in
         "invidious-http-bridge.service"
         "invidious-companion.service"
       ];
+      serviceConfig.ExecStartPre =
+        "+"
+        + pkgs.writeShellScript "invidious-companion-key-render" ''
+          set -eu
+          key=""
+          if [ -s ${cfg.companionKeyFile} ]; then
+            key=$(set -a; . ${cfg.companionKeyFile}; printf %s "''${SERVER_SECRET_KEY:-}")
+          fi
+          [ -n "$key" ] || key='${cfg.companionKey}'
+          umask 027
+          ${pkgs.jq}/bin/jq -n --arg k "$key" '{invidious_companion_key: $k}' \
+            > /var/lib/invidious/companion-key.json
+          chown --reference=/var/lib/invidious /var/lib/invidious/companion-key.json
+        '';
     };
 
     systemd.services.invidious-http-bridge = {
@@ -193,7 +226,10 @@ in
       };
       serviceConfig = {
         ExecStart = "${pkgs.invidious-companion}/bin/invidious-companion";
-        EnvironmentFile = "-/var/lib/fetchproxies/companion-overrides.env";
+        EnvironmentFile = [
+          "-/var/lib/fetchproxies/companion-overrides.env"
+          "-${cfg.companionKeyFile}"
+        ];
         User = "invidious-companion";
         Group = "invidious-companion";
         Restart = "always";

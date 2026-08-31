@@ -4,8 +4,6 @@ use sqlx::types::Json;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-// --- Models ---------------------------------------------------------------
-
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Profile {
     pub id: i64,
@@ -118,8 +116,6 @@ pub struct DashboardStats {
     pub total_size_bytes: i64,
 }
 
-// --- Proxy health (parsed from /srv/archive/config/proxy-health.json) ----
-
 #[derive(Debug, Serialize)]
 pub struct BackendHealth {
     pub name: String,
@@ -128,6 +124,22 @@ pub struct BackendHealth {
     pub http_code: Option<u16>,
     pub latency_ms: Option<i64>,
     pub checked_at: Option<String>,
+}
+
+/// Reformats an RFC3339 timestamp (`2026-04-28T20:56:14Z`) into the
+/// dashboard-wide `YYYY-MM-DD HH:MM:SS` shape by dropping the `T`
+/// separator and trailing `Z`. Shared by `BackendHealth` and
+/// `ProxyHealth`'s `checked_at_display`.
+fn format_checked_at(checked_at: &Option<String>) -> String {
+    match checked_at {
+        Some(s) if s.len() >= 20 && s.as_bytes()[10] == b'T' && s.ends_with('Z') => {
+            let mut out = s[..s.len() - 1].to_string();
+            out.replace_range(10..11, " ");
+            out
+        }
+        Some(s) => s.clone(),
+        None => "—".into(),
+    }
 }
 
 impl BackendHealth {
@@ -144,18 +156,7 @@ impl BackendHealth {
         }
     }
     pub fn checked_at_display(&self) -> String {
-        // proxy-probe writes RFC3339 (`2026-04-28T20:56:14Z`); render
-        // the dashboard-wide `YYYY-MM-DD HH:MM:SS` shape by dropping
-        // the `T` separator and trailing `Z`.
-        match &self.checked_at {
-            Some(s) if s.len() >= 20 && s.as_bytes()[10] == b'T' && s.ends_with('Z') => {
-                let mut out = s[..s.len() - 1].to_string();
-                out.replace_range(10..11, " ");
-                out
-            }
-            Some(s) => s.clone(),
-            None => "—".into(),
-        }
+        format_checked_at(&self.checked_at)
     }
     pub fn port_display(&self) -> String {
         match self.port {
@@ -193,20 +194,8 @@ impl ProxyHealth {
     pub fn total(&self) -> usize {
         self.backends.len()
     }
-    /// Mirror of BackendHealth::checked_at_display — reformats the
-    /// run-level RFC3339 (`2026-04-28T20:56:14Z`) timestamp into the
-    /// dashboard-wide `YYYY-MM-DD HH:MM:SS` shape the proxy summary
-    /// header renders.
     pub fn checked_at_display(&self) -> String {
-        match &self.checked_at {
-            Some(s) if s.len() >= 20 && s.as_bytes()[10] == b'T' && s.ends_with('Z') => {
-                let mut out = s[..s.len() - 1].to_string();
-                out.replace_range(10..11, " ");
-                out
-            }
-            Some(s) => s.clone(),
-            None => "—".into(),
-        }
+        format_checked_at(&self.checked_at)
     }
     /// Largest observed latency — feeds `latency_pct` so the latency
     /// bar widths scale to the page. Floor at 1 to avoid div-by-zero
@@ -282,11 +271,7 @@ pub fn parse_health(json: &str) -> ProxyHealth {
     }
 }
 
-// --- Stats ----------------------------------------------------------------
-
 pub async fn get_stats(pool: &PgPool) -> Result<DashboardStats, sqlx::Error> {
-    // COALESCE for empty-table safety: SUM over an empty set yields NULL,
-    // which would fail to decode into the i64 tuple slots otherwise.
     let row = sqlx::query_as::<_, (i64, i64, i64, i64)>(
         "SELECT
             COALESCE(SUM(CASE WHEN state = 'pending'   THEN 1 ELSE 0 END), 0)::bigint,
@@ -351,10 +336,16 @@ pub async fn get_state_counts(pool: &PgPool) -> Result<StateCounts, sqlx::Error>
     })
 }
 
-// --- Snapshots ------------------------------------------------------------
-
 const SNAPSHOT_COLS: &str =
     "id, run_id, url, state, tags, priority, profile, created_at, updated_at, extracted_title, user_provided_title";
+
+const RESET_TO_PENDING: &str = "UPDATE archive_results
+            SET state = 'pending',
+                retry_count = 0,
+                error = NULL,
+                started_at = NULL,
+                completed_at = NULL,
+                worker_id = NULL";
 
 pub async fn list_snapshots(pool: &PgPool, limit: i64) -> Result<Vec<Snapshot>, sqlx::Error> {
     sqlx::query_as::<_, Snapshot>(&format!(
@@ -389,7 +380,6 @@ pub async fn list_snapshots_filtered(
     }
     if tag_filter.is_some() {
         let p = next_param();
-        // tags is JSONB array; jsonb_path_exists checks element membership.
         sql.push_str(&format!(
             " AND jsonb_path_exists(tags, ('$[*] ? (@ == \"' || {p} || '\")')::jsonpath)"
         ));
@@ -579,8 +569,6 @@ pub async fn get_snapshot_artifacts(
     .await
 }
 
-// --- Runs -----------------------------------------------------------------
-
 pub async fn list_runs(pool: &PgPool, limit: i64) -> Result<Vec<Run>, sqlx::Error> {
     sqlx::query_as::<_, Run>(
         "SELECT id, tags, created_by, created_at
@@ -612,8 +600,6 @@ pub async fn list_run_snapshots(
     .fetch_all(pool)
     .await
 }
-
-// --- Submission -----------------------------------------------------------
 
 /// Create a run + N snapshots in one transaction. Each snapshot fans out
 /// into one archive_result per extractor in `profile`. Tag list is shared
@@ -666,8 +652,6 @@ pub async fn create_run_with_snapshots(
         if url.is_empty() {
             continue;
         }
-        // ON CONFLICT DO NOTHING collapses duplicates within the run.
-        // We re-query to pick up either the new id or the pre-existing one.
         sqlx::query(
             "INSERT INTO snapshots (run_id, url, tags, priority, profile)
              VALUES ($1, $2, $3, $4, $5)
@@ -775,9 +759,6 @@ pub async fn create_manual_snapshot(
         if c.key.is_empty() || c.content.is_empty() {
             continue;
         }
-        // ON CONFLICT updates so a re-submitted manual snapshot can
-        // overwrite a previously-attached blob under the same key
-        // (e.g. fixing a typo in the html). Idempotent within a run.
         let mime: Option<String> = c
             .mime_type
             .as_deref()
@@ -885,9 +866,6 @@ pub async fn rearchive_snapshot(
     .fetch_one(&mut *tx)
     .await?;
 
-    // Profile on the rearchive: use the override when one was passed,
-    // otherwise inherit from the original so the jobs list still
-    // shows a meaningful column value.
     let new_profile = profile_override
         .map(|s| s.to_string())
         .unwrap_or_else(|| original.profile.clone());
@@ -924,19 +902,11 @@ pub async fn rearchive_snapshot(
     Ok(new_snapshot_id)
 }
 
-// --- Snapshot / result actions -------------------------------------------
-
 pub async fn retry_snapshot(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE archive_results
-            SET state = 'pending',
-                retry_count = 0,
-                error = NULL,
-                started_at = NULL,
-                completed_at = NULL,
-                worker_id = NULL
+    sqlx::query(&format!(
+        "{RESET_TO_PENDING}
           WHERE snapshot_id = $1 AND state IN ('failed','skipped')",
-    )
+    ))
     .bind(id)
     .execute(pool)
     .await?;
@@ -944,19 +914,10 @@ pub async fn retry_snapshot(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
 }
 
 pub async fn retry_result(pool: &PgPool, result_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE archive_results
-            SET state = 'pending',
-                retry_count = 0,
-                error = NULL,
-                started_at = NULL,
-                completed_at = NULL,
-                worker_id = NULL
-          WHERE id = $1",
-    )
-    .bind(result_id)
-    .execute(pool)
-    .await?;
+    sqlx::query(&format!("{RESET_TO_PENDING} WHERE id = $1"))
+        .bind(result_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -980,20 +941,12 @@ pub async fn delete_snapshot(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> 
     Ok(())
 }
 
-// --- Run actions ---------------------------------------------------------
-
 pub async fn retry_run(pool: &PgPool, run_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE archive_results
-            SET state = 'pending',
-                retry_count = 0,
-                error = NULL,
-                started_at = NULL,
-                completed_at = NULL,
-                worker_id = NULL
+    sqlx::query(&format!(
+        "{RESET_TO_PENDING}
           WHERE snapshot_id IN (SELECT id FROM snapshots WHERE run_id = $1)
             AND state IN ('failed','skipped')",
-    )
+    ))
     .bind(run_id)
     .execute(pool)
     .await?;
@@ -1021,8 +974,6 @@ pub async fn delete_run(pool: &PgPool, run_id: i64) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-// --- Profiles ------------------------------------------------------------
-
 pub async fn list_profiles(pool: &PgPool) -> Result<Vec<Profile>, sqlx::Error> {
     sqlx::query_as::<_, Profile>(
         "SELECT id, name, extractors, created_at, updated_at
@@ -1031,8 +982,6 @@ pub async fn list_profiles(pool: &PgPool) -> Result<Vec<Profile>, sqlx::Error> {
     .fetch_all(pool)
     .await
 }
-
-// --- Nitter mint ---------------------------------------------------------
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct NitterMintStatus {
@@ -1082,7 +1031,7 @@ pub async fn upsert_nitter_override(
     username: &str,
     password: &str,
     totp_secret: &str,
-    env_decision: &str, // "use_env" or "use_override"
+    env_decision: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO nitter_creds_override
@@ -1111,12 +1060,10 @@ pub async fn clear_nitter_override(pool: &PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-// --- Per-service egress mode --------------------------------------------
-
 #[derive(Debug, Serialize, sqlx::FromRow, Clone)]
 pub struct ServiceEgressMode {
     pub service: String,
-    pub mode: String, // 'proxy_chain' | 'direct'
+    pub mode: String,
     pub reason: Option<String>,
     pub updated_at: NaiveDateTime,
 }
@@ -1156,11 +1103,9 @@ pub async fn set_egress_mode(
     Ok(())
 }
 
-// --- YouTube / invidious-companion auth ---------------------------------
-
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct YoutubeCompanionAuth {
-    pub auth_method: String, // 'none' | 'oauth' | 'cookies'
+    pub auth_method: String,
     pub refresh_token: Option<String>,
     pub access_token: Option<String>,
     pub expires_at: Option<NaiveDateTime>,
@@ -1307,8 +1252,6 @@ pub async fn clear_youtube_auth(pool: &PgPool) -> Result<(), sqlx::Error> {
         .await?;
     Ok(())
 }
-
-// --- Export / Import ------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportData {

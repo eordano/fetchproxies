@@ -3,14 +3,14 @@
 const JOBS_DATA = [
   { id: 47, url: "https://news.ycombinator.com/item?id=43821044", state: "running",   tags: ["weekly","hn"], priority: 0, created: "2026-05-01 23:11:08", profile: "full" },
   { id: 46, url: "https://www.theverge.com/2026/4/30/anthropic-skills",  state: "running",   tags: ["news"],        priority: 1, created: "2026-05-01 23:10:54", profile: "full" },
-  { id: 45, url: "https://twitter.example.org/elonmusk/status/1789203",     state: "completed", tags: ["twitter"],     priority: 0, created: "2026-05-01 22:48:12", profile: "compare" },
+  { id: 45, url: "https://twitter.example.com/elonmusk/status/1789203",  state: "completed", tags: ["twitter"],     priority: 0, created: "2026-05-01 22:48:12", profile: "compare" },
   { id: 44, url: "https://github.com/ArchiveTeam/grab-site",             state: "completed", tags: [],              priority: 0, created: "2026-05-01 22:30:01", profile: "full" },
-  { id: 43, url: "https://reddit.example.org/r/programming/top/?t=week",    state: "partial",   tags: ["reddit","weekly"], priority: 0, created: "2026-05-01 21:55:18", profile: "full" },
+  { id: 43, url: "https://reddit.example.com/r/programming/top/?t=week", state: "partial",   tags: ["reddit","weekly"], priority: 0, created: "2026-05-01 21:55:18", profile: "full" },
   { id: 42, url: "https://news.ycombinator.com/news",                    state: "completed", tags: ["hn","weekly"], priority: 0, created: "2026-05-01 21:00:00", profile: "lightweight" },
-  { id: 41, url: "https://wikipedia.example.org/wiki/Hypertext",            state: "completed", tags: [],              priority: 0, created: "2026-05-01 20:42:33", profile: "full" },
-  { id: 40, url: "https://eordano.com/notes/local-archive",              state: "failed",    tags: [],              priority: 0, created: "2026-05-01 20:11:03", profile: "full" },
+  { id: 41, url: "https://wikipedia.example.com/wiki/Hypertext",         state: "completed", tags: [],              priority: 0, created: "2026-05-01 20:42:33", profile: "full" },
+  { id: 40, url: "https://example.com/notes/local-archive",              state: "failed",    tags: [],              priority: 0, created: "2026-05-01 20:11:03", profile: "full" },
   { id: 39, url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",          state: "completed", tags: ["media"],       priority: 2, created: "2026-05-01 19:42:11", profile: "media" },
-  { id: 38, url: "https://eordano.com",                                  state: "completed", tags: [],              priority: 0, created: "2026-04-28 20:56:11", profile: "full" },
+  { id: 38, url: "https://example.com",                                  state: "completed", tags: [],              priority: 0, created: "2026-04-28 20:56:11", profile: "full" },
   { id: 37, url: "https://example.com/this-is-a-very-long-url-with-utm-tracking-params?utm_source=email", state: "queued", tags: [], priority: 0, created: "2026-05-01 23:14:01", profile: "full" },
 ];
 

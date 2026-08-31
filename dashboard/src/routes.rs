@@ -13,7 +13,13 @@ use std::sync::Arc;
 
 type S = State<Arc<AppState>>;
 
-// --- Pages ---
+async fn redirect_after<F: std::future::Future<Output = Result<(), sqlx::Error>>>(
+    fut: F,
+    to: String,
+) -> Redirect {
+    fut.await.unwrap();
+    Redirect::to(&to)
+}
 
 pub async fn index(State(state): S) -> impl IntoResponse {
     let stats = db::get_stats(&state.db).await.unwrap();
@@ -91,9 +97,6 @@ pub async fn job_detail(State(state): S, Path(id): Path<i64>) -> impl IntoRespon
         None => Vec::new(),
     };
 
-    // Derive the v2-preview pane's metadata from the snapshot + its
-    // results. The design canvas reads these from a faux SNAPSHOT
-    // record; here they roll up from the live DB rows.
     let hostname = snapshot
         .as_ref()
         .map(|s| extract_hostname(&s.url))
@@ -347,16 +350,11 @@ fn journal_sse(
         let mut lines = tokio::io::AsyncBufReadExt::lines(reader);
 
         while let Ok(Some(line)) = lines.next_line().await {
-            // Each journalctl -o json line is a JSON object with many
-            // fields. Pull out only the bits we render. Some fields
-            // can be missing (e.g. session-only events without a unit),
-            // so default sensibly.
             let v: serde_json::Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
 
-            // __REALTIME_TIMESTAMP is microseconds-since-epoch as a string.
             let ts_us: i64 = v
                 .get("__REALTIME_TIMESTAMP")
                 .and_then(|x| x.as_str())
@@ -371,21 +369,13 @@ fn journal_sse(
             let level = v
                 .get("PRIORITY")
                 .and_then(|x| x.as_str())
-                .unwrap_or("6"); // 6 = info
+                .unwrap_or("6");
             let raw_msg = v
                 .get("MESSAGE")
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
-            // Drop gost's redundant in-message timestamp so the row
-            // shows a single, dashboard-formatted ts in the leading
-            // column.
             let msg = strip_log_ts_prefix(raw_msg);
 
-            // gost emits its own JSON inside MESSAGE. Try to parse it
-            // and pluck the human-friendly fields so the client doesn't
-            // have to. If MESSAGE isn't JSON, leave gost null. Use the
-            // raw (unstripped) text — strip_log_ts_prefix doesn't touch
-            // JSON-shaped lines anyway, but be explicit.
             let gost = serde_json::from_str::<serde_json::Value>(raw_msg).ok();
 
             let payload = serde_json::json!({
@@ -404,12 +394,6 @@ fn journal_sse(
 pub async fn logs_stream() -> impl IntoResponse {
     journal_sse(ALL_LOG_UNITS, "JOURNAL_COMMAND_LOGS")
 }
-
-// /proxy-log was folded into /logs (single stream + in-page category
-// pills). The handlers below stay as no-ops in case anything still
-// hardcodes the old path; they redirect to /logs.
-
-// --- Htmx fragments ---
 
 pub async fn fragment_job_table(
     State(state): S,
@@ -436,8 +420,6 @@ pub async fn fragment_proxy_status(State(state): S) -> impl IntoResponse {
     let health = db::parse_health(&health_json);
     templates::ProxyStatusFragment { health }
 }
-
-// --- Submission ---
 
 #[derive(Deserialize)]
 pub struct CreateJobsForm {
@@ -488,7 +470,6 @@ pub async fn api_create_jobs_batch(
     {
         Ok((run_id, _)) => Redirect::to(&format!("/runs/{}", run_id)),
         Err(sqlx::Error::RowNotFound) => {
-            // Profile name didn't match any seed row.
             Redirect::to(&format!(
                 "/jobs/new?error=profile-unknown&profile={}",
                 profile
@@ -497,8 +478,6 @@ pub async fn api_create_jobs_batch(
         Err(_) => Redirect::to("/jobs/new?error=db"),
     }
 }
-
-// --- Manual snapshot submission ---
 
 #[derive(Deserialize)]
 pub struct JobsManualQuery {
@@ -552,14 +531,9 @@ fn collect_manual_contents(form: &CreateManualForm) -> Vec<db::ManualContent> {
             mime_type: Some("text/markdown".to_string()),
         });
     }
-    // Custom blobs: zip parallel form arrays. Empty key OR empty content
-    // skips the row — the form-row UI lets users add then forget rows.
     for (k, c) in form.custom_keys.iter().zip(form.custom_contents.iter()) {
         let key = k.trim();
         if key.is_empty() || c.is_empty() || key == "html" || key == "markdown" {
-            // Reject the well-known keys here to keep the html/markdown
-            // dedicated fields as the only writers — otherwise a stray
-            // `custom_keys[]=html` would clobber the dedicated textarea.
             continue;
         }
         out.push(db::ManualContent {
@@ -697,8 +671,7 @@ pub async fn api_json_create_manual_snapshot(
 }
 
 pub async fn api_retry_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
-    db::retry_snapshot(&state.db, id).await.unwrap();
-    Redirect::to(&format!("/jobs/{}", id))
+    redirect_after(db::retry_snapshot(&state.db, id), format!("/jobs/{}", id)).await
 }
 
 pub async fn api_retry_result(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
@@ -716,13 +689,11 @@ pub async fn api_retry_result(State(state): S, Path(id): Path<i64>) -> impl Into
 }
 
 pub async fn api_cancel_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
-    db::cancel_snapshot(&state.db, id).await.unwrap();
-    Redirect::to(&format!("/jobs/{}", id))
+    redirect_after(db::cancel_snapshot(&state.db, id), format!("/jobs/{}", id)).await
 }
 
 pub async fn api_delete_snapshot(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
-    db::delete_snapshot(&state.db, id).await.unwrap();
-    Redirect::to("/jobs")
+    redirect_after(db::delete_snapshot(&state.db, id), "/jobs".to_string()).await
 }
 
 #[derive(Deserialize, Default)]
@@ -748,21 +719,16 @@ pub async fn api_rearchive_snapshot(
 }
 
 pub async fn api_retry_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
-    db::retry_run(&state.db, id).await.unwrap();
-    Redirect::to(&format!("/runs/{}", id))
+    redirect_after(db::retry_run(&state.db, id), format!("/runs/{}", id)).await
 }
 
 pub async fn api_cancel_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
-    db::cancel_run(&state.db, id).await.unwrap();
-    Redirect::to(&format!("/runs/{}", id))
+    redirect_after(db::cancel_run(&state.db, id), format!("/runs/{}", id)).await
 }
 
 pub async fn api_delete_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
-    db::delete_run(&state.db, id).await.unwrap();
-    Redirect::to("/runs")
+    redirect_after(db::delete_run(&state.db, id), "/runs".to_string()).await
 }
-
-// --- Nitter mint ---
 
 pub async fn nitter_page(State(state): S) -> impl IntoResponse {
     let status = db::get_nitter_mint_status(&state.db).await.unwrap_or(None);
@@ -784,7 +750,7 @@ pub async fn api_nitter_trigger(State(state): S) -> impl IntoResponse {
 
 #[derive(Deserialize)]
 pub struct NitterOverrideForm {
-    pub action: String, // "save" | "clear"
+    pub action: String,
     pub username: Option<String>,
     pub password: Option<String>,
     pub totp_secret: Option<String>,
@@ -809,16 +775,9 @@ pub async fn api_nitter_override(
     Redirect::to("/nitter")
 }
 
-// --- Per-service egress mode ---
-//
-// The dashboard surfaces a `proxy_chain | direct` toggle for each
-// service (nitter, invidious, companion). The values are persisted
-// to service_egress_mode; a separate supervisor (TBD) reads the
-// table and rewires systemd's environment + restarts the service.
-
 #[derive(Deserialize)]
 pub struct EgressForm {
-    pub mode: String,           // 'proxy_chain' | 'direct'
+    pub mode: String,
     pub reason: Option<String>,
 }
 
@@ -844,15 +803,6 @@ pub async fn api_set_egress(
     Redirect::to(redirect).into_response()
 }
 
-// --- YouTube / invidious-companion auth ---
-//
-// Sketch — wires UI to DB. The actual OAuth device-flow polling
-// (POST oauth2.googleapis.com/device/code, GET /token loop) and the
-// systemd env propagation that flips companion between
-// PROXY=http://127.0.0.1:1184 (proxy_chain) and PROXY="" (direct)
-// land in a follow-up commit. For now: status read, manual
-// refresh-token paste, cookies paste, clear.
-
 pub async fn youtube_page(State(state): S) -> impl IntoResponse {
     let auth = db::get_youtube_auth(&state.db).await.unwrap_or(None);
     let pending = db::get_youtube_oauth_pending(&state.db).await.unwrap_or(None);
@@ -870,20 +820,9 @@ pub async fn youtube_page(State(state): S) -> impl IntoResponse {
 }
 
 pub async fn api_youtube_oauth_start(State(state): S) -> impl IntoResponse {
-    // Flip companion into OAuth mode and let it run the device flow
-    // itself. Companion's main.ts wires `auth-pending` → console.log
-    // with the verification URL + user_code; the journal_watcher
-    // task picks that line up and writes through to
-    // youtube_oauth_pending, which this page displays on next render.
-    //
-    // No refresh_token yet — that's set by the watcher when companion
-    // logs `[INFO] [OAUTH] Sign in successful!`. We seed the auth row
-    // with method='oauth' and an empty refresh_token so the
-    // supervisor emits YOUTUBE_SESSION_OAUTH_ENABLED=true on the
-    // restart that the path unit kicks off below.
     let _ = db::upsert_youtube_oauth_token(
         &state.db,
-        "", // no token yet — companion will mint one via Google
+        "",
         None,
         None,
         Some("https://www.googleapis.com/auth/youtube"),
@@ -910,8 +849,8 @@ pub async fn api_youtube_oauth_manual(
     let _ = db::upsert_youtube_oauth_token(
         &state.db,
         form.refresh_token.trim(),
-        None, // access_token derived on first use
-        None, // expires_at derived
+        None,
+        None,
         Some("https://www.googleapis.com/auth/youtube"),
         form.account_email.as_deref().filter(|s| !s.is_empty()),
     )
@@ -942,8 +881,6 @@ pub async fn api_youtube_clear(State(state): S) -> impl IntoResponse {
     crate::supervisor::regenerate_all(&state.db).await;
     Redirect::to("/youtube").into_response()
 }
-
-// --- JSON API ---
 
 pub async fn api_json_stats(State(state): S) -> impl IntoResponse {
     match db::get_stats(&state.db).await {
@@ -1073,8 +1010,6 @@ pub async fn api_json_create_snapshot(
     }
 }
 
-// --- Export/Import ---
-
 pub async fn api_export(State(state): S) -> impl IntoResponse {
     match db::export_all(&state.db).await {
         Ok(data) => Json(data).into_response(),
@@ -1092,14 +1027,10 @@ pub async fn api_import_snapshots(
     }
 }
 
-// --- OpenAPI spec ---
-
 pub async fn openapi_spec() -> impl IntoResponse {
     ([("content-type", "application/json")], OPENAPI_JSON)
 }
 
-// Raw-string with `##` delimiters so `"#/components/..."` $ref values
-// don't terminate the literal at the embedded `#`.
 const OPENAPI_JSON: &str = r##"{
   "openapi": "3.0.3",
   "info": {
@@ -1208,14 +1139,9 @@ const OPENAPI_JSON: &str = r##"{
   }
 }"##;
 
-// --- Help page ---
-
 pub async fn help_page() -> impl IntoResponse {
     templates::HelpTemplate { active: "help" }
 }
-
-// --- Legacy proxy-log endpoints — keep returning data so anything
-// that bookmarked /proxy-log or hits its SSE feed redirects gracefully. ---
 
 pub async fn proxy_log_page() -> impl IntoResponse {
     Redirect::to("/logs")

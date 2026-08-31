@@ -39,17 +39,11 @@ async fn main() {
             .unwrap_or_else(|_| "/var/lib/fetchproxies/nitter-mint.trigger".to_string()),
     });
 
-    // Materialise current DB state into the override env files so the
-    // path-watched units see something on first boot.
     supervisor::regenerate_all(&state.db).await;
 
-    // Background tail of invidious-companion's journal — surfaces the
-    // OAuth device-flow code into youtube_oauth_pending so /youtube
-    // can display it without the user having to grep journalctl.
     journal_watcher::spawn(state.db.clone());
 
     let app = Router::new()
-        // Pages
         .route("/", get(routes::index))
         .route("/jobs", get(routes::jobs_list))
         .route("/jobs/new", get(routes::jobs_new_form))
@@ -65,7 +59,6 @@ async fn main() {
         .route("/proxy-log", get(routes::proxy_log_page))
         .route("/proxy-log/stream", get(routes::proxy_log_stream))
         .route("/help", get(routes::help_page))
-        // Form API (htmx targets)
         .route("/api/jobs", post(routes::api_create_jobs_batch))
         .route("/api/jobs/manual", post(routes::api_create_manual_snapshot))
         .route("/api/snapshots/:id/retry", post(routes::api_retry_snapshot))
@@ -83,7 +76,6 @@ async fn main() {
         .route("/api/youtube/oauth/manual", post(routes::api_youtube_oauth_manual))
         .route("/api/youtube/cookies", post(routes::api_youtube_cookies))
         .route("/api/youtube/auth/clear", post(routes::api_youtube_clear))
-        // JSON API (programmatic)
         .route("/api/openapi.json", get(routes::openapi_spec))
         .route("/api/v1/stats", get(routes::api_json_stats))
         .route("/api/v1/proxy/health", get(routes::api_json_proxy_health))
@@ -109,11 +101,9 @@ async fn main() {
         .route("/api/v1/profiles", get(routes::api_json_profiles))
         .route("/api/v1/export", get(routes::api_export))
         .route("/api/v1/import/snapshots", post(routes::api_import_snapshots))
-        // Fragments (htmx partial updates)
         .route("/fragments/job-table", get(routes::fragment_job_table))
         .route("/fragments/proxy-status", get(routes::fragment_proxy_status))
         .with_state(state)
-        // Design-system assets (token CSS, Source Serif 4, logomark).
         .nest_service(
             "/static",
             ServeDir::new(

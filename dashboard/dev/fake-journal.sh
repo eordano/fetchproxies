@@ -68,8 +68,8 @@ TARGETS=(
   "www.theverge.com:443"
   "www.reddit.com:443"
   "github.com:443"
-  "wikipedia.example.org:443"
-  "eordano.com:443"
+  "wikipedia.example.com:443"
+  "example.com:443"
 )
 
 trap 'exit 0' INT TERM

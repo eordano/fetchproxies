@@ -33,7 +33,7 @@
     port = 1314
 
     [Config]
-    hmacKey = "fetchproxies-nitter-key"
+    hmacKey = "CHANGE-ME-dev-only"
 
     [Preferences]
     theme = "Auto"

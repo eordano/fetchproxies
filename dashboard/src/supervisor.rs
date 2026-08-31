@@ -1,27 +1,3 @@
-// Supervisor: render db state → systemd-readable env files.
-//
-// Each toggle the dashboard exposes (per-service egress, companion auth
-// method, …) is persisted to postgres by the route handlers. After every
-// such write, we call `regenerate_all` to materialise the chosen state
-// into per-service env files under /var/lib/fetchproxies. Path units
-// in NixOS watch each file and restart the corresponding service when
-// it changes — so a flip of the egress dropdown becomes a service
-// restart with new environment, no DBus poking required.
-//
-// File layout:
-//
-//   /var/lib/fetchproxies/companion-overrides.env
-//     Sourced as EnvironmentFile=- by invidious-companion.service.
-//     Lines override values set in the unit's Environment=.
-//
-//   /var/lib/fetchproxies/nitter-bridge.env
-//     Read by nitter-http-bridge.service to decide its gost forwarder
-//     argv (proxy_chain → -F socks5://127.0.0.1:1081 ; direct → no -F).
-//     Toggling here moves nitter on/off the chain without touching
-//     nitter.conf or restarting nitter itself.
-//
-// Atomic: every file is written to a sibling .tmp and renamed, so the
-// path unit never sees a partial file.
 
 use crate::db;
 use sqlx::PgPool;
@@ -65,28 +41,11 @@ async fn render_companion(pool: &PgPool) -> std::io::Result<()> {
         "# Source of truth: youtube_companion_auth + service_egress_mode in postgres.".to_string(),
     ];
 
-    // Egress: PROXY env var consumed by companion (Deno fetch). Empty
-    // → no proxy → direct gateway egress.
     match egress.as_str() {
         "direct" => lines.push("PROXY=".to_string()),
         _ => lines.push("PROXY=http://127.0.0.1:1184".to_string()),
     }
 
-    // Authentication mode. Mutually exclusive: oauth XOR cookies. When
-    // 'none', explicitly clear both to undo a previous setting.
-    //
-    // The PO-token cron is XOR with OAuth/cookies in companion's own
-    // logic: src/main.ts only initialises tokenMinter when
-    // !oauth_enabled AND po_token_enabled. With OAuth on, tokenMinter
-    // stays undefined; player.ts's gate
-    //
-    //     if (po_token_enabled && !tokenMinter) return ERROR
-    //
-    // then 503's every request with "Companion is starting", even
-    // though OAuth succeeded. The fix is to flip
-    // JOBS_YOUTUBE_SESSION_PO_TOKEN_ENABLED off whenever a real
-    // identity is provided — companion gates on that flag, not on
-    // anything we can supply.
     match auth.as_ref().map(|a| a.auth_method.as_str()) {
         Some("oauth") => {
             lines.push("YOUTUBE_SESSION_OAUTH_ENABLED=true".to_string());
@@ -95,9 +54,6 @@ async fn render_companion(pool: &PgPool) -> std::io::Result<()> {
         }
         Some("cookies") => {
             lines.push("YOUTUBE_SESSION_OAUTH_ENABLED=false".to_string());
-            // sh-quote the cookie value: it can contain `;`, spaces,
-            // quotes — anything except literal newlines (which a
-            // valid Cookie header doesn't have anyway).
             let raw = auth.as_ref().and_then(|a| a.cookies.as_deref()).unwrap_or("");
             lines.push(format!("YOUTUBE_SESSION_COOKIES={}", shell_quote(raw)));
             lines.push("JOBS_YOUTUBE_SESSION_PO_TOKEN_ENABLED=false".to_string());
@@ -121,9 +77,6 @@ async fn render_nitter_bridge(pool: &PgPool) -> std::io::Result<()> {
         .map(|e| e.mode)
         .unwrap_or_else(|| "proxy_chain".to_string());
 
-    // nitter-http-bridge.service reads $FORWARDER and emits gost argv:
-    //   $FORWARDER non-empty → -F "$FORWARDER"  (proxy_chain mode)
-    //   $FORWARDER empty     → no -F            (direct mode)
     let forwarder = match egress.as_str() {
         "direct" => "",
         _ => "socks5://127.0.0.1:1081",
@@ -142,9 +95,6 @@ async fn render_nitter_bridge(pool: &PgPool) -> std::io::Result<()> {
 async fn write_atomic(path: &str, body: &str) -> std::io::Result<()> {
     let p = Path::new(path);
     if let Some(parent) = p.parent() {
-        // Make this safe to point at /tmp/foo/bar.env from dev mode.
-        // create_dir_all is a no-op on the production path because
-        // /var/lib/fetchproxies/ is set up by the systemd unit.
         tokio::fs::create_dir_all(parent).await?;
     }
     let tmp = p.with_extension("env.tmp");

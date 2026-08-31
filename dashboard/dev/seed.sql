@@ -33,24 +33,24 @@ INSERT INTO snapshots (id, run_id, url, state, tags, priority, profile, created_
     (2, 1, 'https://www.theverge.com/2026/4/30/anthropic-skills', 'running',
      '["news"]'::jsonb,           1, 'full',        now() AT TIME ZONE 'UTC' - interval '3 minutes',
                                                     now() AT TIME ZONE 'UTC' - interval '1 minute'),
-    (3, 2, 'https://eordano.com', 'completed',
+    (3, 2, 'https://example.com', 'completed',
      '[]'::jsonb,                 0, 'compare',     now() AT TIME ZONE 'UTC' - interval '1 hour',
                                                     now() AT TIME ZONE 'UTC' - interval '59 minutes'),
     (4, 2, 'https://github.com/ArchiveTeam/grab-site', 'completed',
      '[]'::jsonb,                 0, 'lightweight', now() AT TIME ZONE 'UTC' - interval '90 minutes',
                                                     now() AT TIME ZONE 'UTC' - interval '88 minutes'),
-    (5, 3, 'https://reddit.example.org/r/programming/top/?t=week', 'partial',
+    (5, 3, 'https://reddit.example.com/r/programming/top/?t=week', 'partial',
      '["reddit","weekly"]'::jsonb, 0, 'full',       now() AT TIME ZONE 'UTC' - interval '2 hours',
                                                     now() AT TIME ZONE 'UTC' - interval '2 hours'),
-    (6, 4, 'https://eordano.com/notes/local-archive', 'failed',
+    (6, 4, 'https://example.com/notes/local-archive', 'failed',
      '[]'::jsonb,                 0, 'full',        now() AT TIME ZONE 'UTC' - interval '20 minutes',
                                                     now() AT TIME ZONE 'UTC' - interval '18 minutes'),
-    (7, 4, 'https://wikipedia.example.org/wiki/Hypertext', 'cancelled',
+    (7, 4, 'https://wikipedia.example.com/wiki/Hypertext', 'cancelled',
      '[]'::jsonb,                 0, 'lightweight', now() AT TIME ZONE 'UTC' - interval '15 minutes',
                                                     now() AT TIME ZONE 'UTC' - interval '14 minutes'),
     -- A second completed snapshot of the same URL as #3 -- exercises
     -- the URL-history block on the snapshot detail page.
-    (8, 4, 'https://eordano.com', 'completed',
+    (8, 4, 'https://example.com', 'completed',
      '[]'::jsonb,                 0, 'full',        now() AT TIME ZONE 'UTC' - interval '12 hours',
                                                     now() AT TIME ZONE 'UTC' - interval '12 hours');
 SELECT setval('snapshots_id_seq', (SELECT max(id) FROM snapshots));
@@ -158,7 +158,7 @@ UPDATE snapshots SET state = 'cancelled' WHERE id = 7;
 
 -- Extracted titles -- set for the snapshots that completed at least one
 -- readability/monolith run. Mirrors what worker.sh writes on completion.
-UPDATE snapshots SET extracted_title = 'Martin Eordano -- Notes & writing' WHERE id IN (3, 8);
+UPDATE snapshots SET extracted_title = 'Example Site -- Notes & writing' WHERE id IN (3, 8);
 UPDATE snapshots SET extracted_title = 'ArchiveTeam/grab-site: Web archiving with WARC output' WHERE id = 4;
 
 -- ---- Manual snapshot fixture ----

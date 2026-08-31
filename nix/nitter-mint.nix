@@ -39,6 +39,7 @@ let
     runtimeInputs = with pkgs; [
       postgresql
       coreutils
+      gnused
       nitter-cookie-mint
     ];
     excludeShellChecks = [ "SC1090" ];
@@ -56,6 +57,8 @@ let
       sql() { psql -X -P pager=off -A -t --no-psqlrc -v ON_ERROR_STOP=1 "$DATABASE_URL" "$@"; }
 
       sqlesc() { printf '%s' "$1" | sed "s/'/'''/g"; }
+
+      redact() { sed -E 's#([A-Za-z][A-Za-z0-9+.-]*://)[^ /@]+@([^ /:]*superproxy\.io)#\1***:***@\2#g'; }
 
       if [ -r "$ENV_FILE" ]; then
         env_hash=$(sha256sum "$ENV_FILE" | cut -d' ' -f1)
@@ -145,7 +148,8 @@ let
         fi
         log "minted fresh session (source=$src)"
       else
-        err=$(head -c 500 /tmp/nitter-mint-err | tr '\n' ' ')
+        err=$(redact < /tmp/nitter-mint-err | tr '\n' ' ')
+        err=''${err:0:500}
         err_esc=$(sqlesc "$err")
         sql -c "UPDATE nitter_mint_status SET
                last_error = '$err_esc',
@@ -167,7 +171,7 @@ in
       description = ''
         Where the minted sessions JSONL is written. Default lives under
         the archive virtiofs share's `config/` dir (=
-        the host-side archive dataset's config/), so cookies survive VM
+        the host-side archive path), so cookies survive VM
         rebuilds without a separate secret. Seed manually by writing
         this file on the host (owner fetchproxies uid, mode 0400).
         Nitter's ExecStartPre reads it via install(8) as root and

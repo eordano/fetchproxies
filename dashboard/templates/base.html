@@ -26,7 +26,7 @@
         if (sel && sel.toString().length > 0) return;
         const href = row.dataset.href;
         // Absolute URLs (the help "Fronted services" rows point at
-        // twitter.example.org, etc.) always open in a new tab so the
+        // twitter.example.com, etc.) always open in a new tab so the
         // operator's place in the dashboard isn't lost. Internal
         // paths navigate in the current tab unless cmd/ctrl-click.
         const external = /^https?:\/\//i.test(href);

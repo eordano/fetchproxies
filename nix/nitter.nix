@@ -19,7 +19,7 @@ in
 
     domain = mkOption {
       type = types.str;
-      default = "twitter.example.org";
+      default = "twitter.example.com";
       description = "Public hostname shown in nitter config.";
     };
 
@@ -45,6 +45,27 @@ in
       type = types.path;
       default = "/var/lib/fp-secrets/nitter-oauth-env";
       description = "EnvironmentFile with nitter OAuth tokens.";
+    };
+
+    hmacKey = mkOption {
+      type = types.str;
+      default = "CHANGE-ME-dev-only";
+      description = ''
+        Dev-only fallback for the key nitter uses to sign proxied media URLs
+        and preference tokens. Only used when hmacKeyFile is absent or empty;
+        real deployments populate hmacKeyFile instead.
+      '';
+    };
+
+    hmacKeyFile = mkOption {
+      type = types.str;
+      default = "/var/lib/fp-secrets/nitter-hmac-key";
+      description = ''
+        File holding the real hmac key on the deployment host (one line,
+        e.g. from `openssl rand -hex 16`). Substituted into the rendered
+        nitter.conf at service start, so the secret never enters the nix
+        store or this repo.
+      '';
     };
 
     uid = mkOption {
@@ -84,7 +105,7 @@ in
       port = ${toString cfg.port}
 
       [Config]
-      hmacKey = "fetchproxies-nitter-key"
+      hmacKey = "@HMAC_KEY@"
       authFile = "/var/lib/nitter/auth.jsonl"
       proxy = "http://127.0.0.1:${toString cfg.httpBridgePort}"
       proxyAuth = ""
@@ -138,7 +159,14 @@ in
             "+"
             + pkgs.writeShellScript "nitter-stage" ''
               set -eu
-              ln -sf /etc/nitter.conf ${runDir}/nitter.conf
+              if [ -s ${cfg.hmacKeyFile} ]; then
+                hmac=$(cat ${cfg.hmacKeyFile})
+              else
+                hmac='${cfg.hmacKey}'
+              fi
+              sed "s|@HMAC_KEY@|$hmac|" /etc/nitter.conf > ${runDir}/nitter.conf
+              chown --reference=${runDir} ${runDir}/nitter.conf
+              chmod 0640 ${runDir}/nitter.conf
               ln -sfn ${nitter-lr}/share/nitter/public ${runDir}/public
               install -m 0640 ${cfg.sessionsFile} ${runDir}/sessions.jsonl
               chown --reference=${runDir} ${runDir}/sessions.jsonl

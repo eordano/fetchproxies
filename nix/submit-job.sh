@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${FETCHPROXIES_URL:-https://fetch.example.org}"
+BASE_URL="${FETCHPROXIES_URL:-https://fetch.example.com}"
 
 usage() {
   echo "Usage: submit-job [-p profile] [-P priority] [-t tag1,tag2] <url>" >&2
   echo "" >&2
   echo "Profiles: full (default), compare, lightweight, warc_only, media, bd_only" >&2
-  echo "Env:      FETCHPROXIES_URL (default: https://fetch.example.org)" >&2
+  echo "Env:      FETCHPROXIES_URL (default: https://fetch.example.com)" >&2
   exit 1
 }
 
