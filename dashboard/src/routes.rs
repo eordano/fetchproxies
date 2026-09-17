@@ -148,7 +148,7 @@ pub async fn job_detail(State(state): S, Path(id): Path<i64>) -> impl IntoRespon
 fn extract_hostname(url: &str) -> String {
     let after_scheme = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
     let host = after_scheme
-        .split(|c: char| c == '/' || c == '?' || c == '#')
+        .split(['/', '?', '#'])
         .next()
         .unwrap_or("");
     host.to_string()

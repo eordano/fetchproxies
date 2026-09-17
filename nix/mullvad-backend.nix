@@ -86,6 +86,7 @@ in
         configBundle = {
           zipPath = loc.configZipPath;
           select = loc.selectConfigs;
+          activeListUrl = "https://api.mullvad.net/www/relays/all/";
         };
         allowedIPs = "0.0.0.0/0";
         mtu = 1280;

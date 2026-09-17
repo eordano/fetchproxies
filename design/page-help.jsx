@@ -75,7 +75,7 @@ const Help = () => {
                     <tr><td>Wikipedia</td><td className="mono">wikipedia.example.com</td><td>kiwix-serve — offline <span className="mono">.zim</span> corpus on <span className="mono">/persist/kiwix</span></td></tr>
                     <tr><td>Torrents</td><td className="mono">torrent.example.com</td><td>transmission — pinned to a single Mullvad tunnel (<span className="mono">100.64/24</span> only)</td></tr>
                     <tr><td>Archive UI</td><td className="mono">fetch.example.com</td><td>this dashboard</td></tr>
-                    <tr><td>Artifacts</td><td className="mono">fetch.example.com/artifacts/results/&lt;id&gt;/</td><td>nginx autoindex over <span className="mono">/tank/archive/fetch/results</span></td></tr>
+                    <tr><td>Artifacts</td><td className="mono">fetch.example.com/artifacts/results/&lt;id&gt;/</td><td>nginx autoindex over the host's results directory</td></tr>
                     <tr><td>Public proxy</td><td className="mono">proxy.example.com</td><td>SOCKS5 / HTTP / HTTPS forward proxy onto the archiver chain</td></tr>
                   </tbody>
                 </table>
@@ -238,7 +238,7 @@ const Help = () => {
                 <dt>db</dt>
                 <dd><span className="mono">/var/lib/fetchproxies/db.sqlite</span> — WAL, snapshotted to <span className="mono">/srv/archive/db.sqlite.bak</span> every 5 min</dd>
                 <dt>artifacts</dt>
-                <dd><span className="mono">/srv/archive/results/&lt;result_id&gt;/</span> — host's <span className="mono">/tank/archive/fetch/results/</span></dd>
+                <dd><span className="mono">/srv/archive/results/&lt;result_id&gt;/</span> — the host's results share</dd>
                 <dt>nitter sessions</dt>
                 <dd><span className="mono">/srv/archive/config/nitter-sessions.jsonl</span></dd>
                 <dt>health snapshot</dt>

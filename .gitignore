@@ -5,3 +5,9 @@ result-*
 *.sqlite-wal
 .direnv
 node_modules/
+.env
+*.env
+*.log
+design/vendor/
+design/fonts/
+dashboard/static/fonts/

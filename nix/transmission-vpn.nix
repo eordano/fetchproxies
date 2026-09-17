@@ -43,6 +43,8 @@ let
         "--config-dir"
         "/config"
         "--download-dir"
+        "/done"
+        "--incomplete-dir"
         "/downloads"
         "--logfile"
         "/dev/stderr"
@@ -65,8 +67,9 @@ let
     pex-enabled = true;
     lpd-enabled = false;
     utp-enabled = true;
-    download-dir = "/downloads";
-    incomplete-dir-enabled = false;
+    download-dir = "/done";
+    incomplete-dir = "/downloads";
+    incomplete-dir-enabled = true;
     blocklist-enabled = false;
     encryption = 2;
     start-added-torrents = true;
@@ -96,7 +99,18 @@ in
     downloadDir = mkOption {
       type = types.path;
       default = "/srv/torrents";
-      description = "Host-visible directory for completed downloads (mounted into the container at /downloads).";
+      description = "Host-visible directory for in-progress downloads (mounted into the container at /downloads; transmission's incomplete-dir).";
+    };
+
+    completedDir = mkOption {
+      type = types.path;
+      default = "/srv/done";
+      description = ''
+        Host-visible directory finished torrents are moved to (mounted into the
+        container at /done; transmission's download-dir). Not pre-created here:
+        it is an NFS-backed share owned by the media user on the file server,
+        not by the transmission user.
+      '';
     };
 
     configDir = mkOption {
@@ -182,6 +196,7 @@ in
       volumes = [
         "${cfg.configDir}:/config"
         "${cfg.downloadDir}:/downloads"
+        "${cfg.completedDir}:/done"
       ];
       extraOptions = [
         "--runtime=runsc-host"
@@ -197,6 +212,13 @@ in
         }
       }
     '';
+
+    services.fetchproxies.cgroup-exit.units.podman-transmission.backend = cfg.backend;
+
+    systemd.services.podman-transmission = {
+      after = [ "transmission-vpn-iprule.service" ];
+      requires = [ "transmission-vpn-iprule.service" ];
+    };
 
     systemd.services.transmission-vpn-iprule = {
       description = "Install uidrange ip rule pinning transmission-vpn traffic to ${cfg.backend}";

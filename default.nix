@@ -1,7 +1,9 @@
 {
   imports = [
     ./nix/proxy-chain.nix
+    ./nix/store-disk-bounded-mkfs.nix
     ./nix/archiver.nix
+    ./nix/cgroup-exit.nix
     ./nix/dashboard.nix
     ./nix/mullvad-backend.nix
     ./nix/nitter-mint.nix

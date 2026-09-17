@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshots_run_url ON snapshots (run_id, url);
 CREATE INDEX IF NOT EXISTS idx_snapshots_url_created ON snapshots (url, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_snapshots_state ON snapshots (state, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_snapshots_priority_created ON snapshots (priority DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_snapshots_tags ON snapshots USING GIN (tags jsonb_path_ops);
 
 -- The submission profile (`full`, `compare`, `lightweight`, ...) -- denormalised
 -- onto the snapshot so the jobs list can render it in a single SELECT

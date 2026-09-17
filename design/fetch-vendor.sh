@@ -35,3 +35,16 @@ fetch vendor/react-dom.development.js \
 fetch vendor/babel.min.js \
   "https://unpkg.com/@babel/standalone@$BABEL_VERSION/babel.min.js" \
   2623a9e22809915ce789b4461154e277ddce520d5a4320c14d44332a5d0dcea0
+
+SOURCE_SERIF_VERSION=5.3.0
+fetch vendor/source-serif-4-$SOURCE_SERIF_VERSION.tgz \
+  "https://registry.npmjs.org/@fontsource-variable/source-serif-4/-/source-serif-4-$SOURCE_SERIF_VERSION.tgz" \
+  4a19d3a6fda1a977f15a0ee1e60e5f53df2e6ae77f46f1ed54c7fc52d015e85a
+mkdir -p fonts
+for subset in latin latin-ext cyrillic cyrillic-ext greek vietnamese; do
+  tar -xzf "vendor/source-serif-4-$SOURCE_SERIF_VERSION.tgz" -O \
+    "package/files/source-serif-4-$subset-wght-normal.woff2" > "fonts/SourceSerif4-Roman-$subset.woff2"
+  tar -xzf "vendor/source-serif-4-$SOURCE_SERIF_VERSION.tgz" -O \
+    "package/files/source-serif-4-$subset-wght-italic.woff2" > "fonts/SourceSerif4-Italic-$subset.woff2"
+done
+echo "fonts   fonts/ ($(ls fonts | wc -l) files)"

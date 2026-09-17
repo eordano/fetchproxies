@@ -380,9 +380,7 @@ pub async fn list_snapshots_filtered(
     }
     if tag_filter.is_some() {
         let p = next_param();
-        sql.push_str(&format!(
-            " AND jsonb_path_exists(tags, ('$[*] ? (@ == \"' || {p} || '\")')::jsonpath)"
-        ));
+        sql.push_str(&format!(" AND tags @> jsonb_build_array({p}::text)"));
     }
     if run_filter.is_some() {
         let p = next_param();

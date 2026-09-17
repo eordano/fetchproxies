@@ -34,6 +34,7 @@
       checkReversePath = "loose";
       allowedTCPPorts = [
         config.services.fetchproxies.dashboard.port
+        config.services.fetchproxies.proxy-chain.chains.archiver.port
         22
       ];
     };
@@ -63,6 +64,11 @@
 
   fileSystems."/srv/torrents" = {
     device = "torrents";
+    fsType = "virtiofs";
+  };
+
+  fileSystems."/srv/done" = {
+    device = "done";
     fsType = "virtiofs";
   };
 
@@ -208,6 +214,7 @@
     enable = true;
     backend = "us-bos";
     downloadDir = "/srv/torrents";
+    completedDir = "/srv/done";
   };
 
   services.fetchproxies.firecrawl.enable = true;
