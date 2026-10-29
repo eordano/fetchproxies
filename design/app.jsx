@@ -4,7 +4,7 @@ const App = () => {
   return (
     <DesignCanvas
       title="Fetchproxies — redesign"
-      subtitle="LocalRock design system. Pan with drag. Click any artboard to focus."
+      subtitle="Design system. Pan with drag. Click any artboard to focus."
     >
       <DCSection id="snapshot" title="Snapshot detail" subtitle="Preview-led split">
         <DCArtboard id="v2" label="Snapshot detail" width={1240} height={1000}>

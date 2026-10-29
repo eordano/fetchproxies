@@ -1,4 +1,3 @@
-
 use chrono::{Duration, Utc};
 use regex::Regex;
 use sqlx::PgPool;
@@ -87,11 +86,7 @@ async fn run_once(
             .bind(expires_at.naive_utc())
             .execute(pool)
             .await;
-            tracing::info!(
-                "journal_watcher: captured OAuth code {} → {}",
-                code,
-                url
-            );
+            tracing::info!("journal_watcher: captured OAuth code {} → {}", code, url);
             continue;
         }
 

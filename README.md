@@ -17,7 +17,8 @@ with extractors sandboxed in ephemeral rootless-podman containers under gVisor.
 | `dashboard/` | Rust (axum + htmx + Askama) operator dashboard crate |
 | `dashboard/dev/` | Laptop preview harness (seed data, fake journald feed) |
 | `design/` | No-build-step browser canvas for the dashboard UI (React via CDN, vendored by `design/fetch-vendor.sh`) |
-| `brightdata-ca.crt` | Bright Data proxy root CA (their public MITM CA, needed for the fallback backend) |
+| `brightdata_proxy_ca.zip` | Bright Data's published certificate bundle, downloaded from `https://brightdata.com/static/brightdata_proxy_ca.zip` |
+| `brightdata-ca.crt` | `brightdata_root_ca_44445.crt` extracted from that bundle for native proxy port 44445 |
 
 ## Components (`nix/`)
 

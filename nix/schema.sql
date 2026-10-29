@@ -29,13 +29,14 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- on its own would freeze whichever extractors were in `compare` etc.
 -- on first init and never pick up new ones.
 INSERT INTO profiles (name, extractors) VALUES
-    ('full',        '["wget_warc","monolith","screenshot","screenshot_mobile","screenshot_tablet","screenshot_desktop","readability","pdf"]'),
-    ('compare',     '["wget_warc","monolith","screenshot","screenshot_mobile","screenshot_tablet","screenshot_desktop","readability","pdf","bd_screenshot"]'),
-    ('lightweight', '["monolith","readability"]'),
+    ('full',        '["wget_warc","monolith","screenshot","screenshot_mobile","screenshot_tablet","screenshot_desktop","readability","markdown","pdf"]'),
+    ('compare',     '["wget_warc","monolith","screenshot","screenshot_mobile","screenshot_tablet","screenshot_desktop","readability","markdown","pdf","bd_screenshot"]'),
+    ('lightweight', '["monolith","readability","markdown"]'),
     ('warc_only',   '["wget_warc"]'),
     ('media',       '["yt_dlp"]'),
     ('screenshots', '["screenshot_mobile","screenshot_tablet","screenshot_desktop","screenshot"]'),
-    ('bd_only',     '["bd_screenshot"]')
+    ('bd_only',     '["bd_screenshot"]'),
+    ('agent',       '["markdown"]')
 ON CONFLICT(name) DO UPDATE SET extractors = EXCLUDED.extractors;
 
 -- ============================================================
@@ -128,7 +129,7 @@ CREATE TABLE IF NOT EXISTS archive_results (
                                          'screenshot','screenshot_mobile','screenshot_tablet',
                                          'screenshot_desktop',
                                          'readability','singlefile','dom_dump','pdf',
-                                         'bd_screenshot')),
+                                         'bd_screenshot','markdown')),
     state         TEXT NOT NULL DEFAULT 'pending'
                     CHECK (state IN ('pending','running','completed','failed','skipped')),
     priority      INTEGER NOT NULL DEFAULT 0,
@@ -157,7 +158,7 @@ ALTER TABLE archive_results ADD CONSTRAINT archive_results_extractor_check
                          'screenshot','screenshot_mobile','screenshot_tablet',
                          'screenshot_desktop',
                          'readability','singlefile','dom_dump','pdf',
-                         'bd_screenshot'));
+                         'bd_screenshot','markdown'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_archive_results_snapshot_extractor
     ON archive_results (snapshot_id, extractor);
@@ -189,6 +190,26 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_result ON artifacts (result_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_snapshot ON artifacts (snapshot_id);
 
 -- ============================================================
+-- 5b. Markdown renditions -- the agents' copy of a page
+-- ============================================================
+-- One row per completed `markdown` result: page.md (also uploaded to S3
+-- with the other files, at most 256 KiB) and page.json as `meta` (title,
+-- source, final_url, fetched_at, http_status, content_type, archive,
+-- rendition, truncated). worker.sh writes it in the transaction that marks
+-- the result completed, so the dashboard serves the text without an S3
+-- client and a poller that sees `completed` always finds it.
+CREATE TABLE IF NOT EXISTS result_markdown (
+    result_id    BIGINT PRIMARY KEY REFERENCES archive_results(id) ON DELETE CASCADE,
+    snapshot_id  BIGINT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    markdown     TEXT NOT NULL,
+    meta         JSONB NOT NULL DEFAULT '{}'::jsonb
+                   CHECK (jsonb_typeof(meta) = 'object'),
+    created_at   TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
+);
+
+CREATE INDEX IF NOT EXISTS idx_result_markdown_snapshot ON result_markdown (snapshot_id);
+
+-- ============================================================
 -- 6. Snapshot state derivation triggers
 -- ============================================================
 -- Recompute the parent snapshot's state from its archive_results children
@@ -215,6 +236,11 @@ DECLARE
     n_completed BIGINT;
     n_skipped BIGINT;
 BEGIN
+    -- Concurrent workers can finish different results for one snapshot at
+    -- once. Lock the parent before reading children so the second finisher
+    -- sees the first finisher's committed state.
+    PERFORM 1 FROM snapshots WHERE id = p_snapshot_id FOR UPDATE;
+
     SELECT
         COUNT(*) FILTER (WHERE state = 'running'),
         COUNT(*) FILTER (WHERE state = 'pending'),
@@ -272,6 +298,25 @@ CREATE TRIGGER archive_result_state_after_insert
 AFTER INSERT ON archive_results
 FOR EACH ROW
 EXECUTE FUNCTION trg_archive_results_after_change();
+
+-- Repair rows stranded by the old concurrent recomputation race.
+DO $$
+DECLARE
+    stale_snapshot_id BIGINT;
+BEGIN
+    FOR stale_snapshot_id IN
+        SELECT s.id
+        FROM snapshots s
+        WHERE s.state IN ('pending', 'running')
+          AND NOT EXISTS (
+              SELECT 1 FROM archive_results ar
+              WHERE ar.snapshot_id = s.id AND ar.state IN ('pending', 'running')
+          )
+    LOOP
+        PERFORM recompute_snapshot_state(stale_snapshot_id);
+    END LOOP;
+END;
+$$;
 
 -- ============================================================
 -- 7. Nitter credential override + mint status

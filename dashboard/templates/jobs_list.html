@@ -14,12 +14,12 @@
 
     <div class="jobs-toolbar">
         <div class="jobs-tabs">
-            <a class="jobs-tab{% match filter %}{% when None %} is-active{% when Some with (_) %}{% endmatch %}" href="/jobs"><span>All</span><span class="jobs-tab__count">{{ counts.all }}</span></a>
-            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "queued" || s == "pending" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=pending"><span>Queued</span><span class="jobs-tab__count">{{ counts.queued }}</span></a>
-            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "running" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=running"><span>Running</span><span class="jobs-tab__count">{{ counts.running }}</span></a>
-            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "completed" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=completed"><span>Completed</span><span class="jobs-tab__count">{{ counts.completed }}</span></a>
-            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "partial" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=partial"><span>Partial</span><span class="jobs-tab__count">{{ counts.partial }}</span></a>
-            <a class="jobs-tab{% match filter %}{% when Some with (s) %}{% if s == "failed" %} is-active{% endif %}{% when None %}{% endmatch %}" href="/jobs?state=failed"><span>Failed</span><span class="jobs-tab__count">{{ counts.failed }}</span></a>
+            <a class="jobs-tab{% if filter is none %} is-active{% endif %}" href="/jobs"><span>All</span><span class="jobs-tab__count">{{ counts.all }}</span></a>
+            <a class="jobs-tab{% if filter is not none %}{% with s = filter %}{% if s == "queued" or s == "pending" %} is-active{% endif %}{% endwith %}{% endif %}" href="/jobs?state=pending"><span>Queued</span><span class="jobs-tab__count">{{ counts.queued }}</span></a>
+            <a class="jobs-tab{% if filter is not none %}{% with s = filter %}{% if s == "running" %} is-active{% endif %}{% endwith %}{% endif %}" href="/jobs?state=running"><span>Running</span><span class="jobs-tab__count">{{ counts.running }}</span></a>
+            <a class="jobs-tab{% if filter is not none %}{% with s = filter %}{% if s == "completed" %} is-active{% endif %}{% endwith %}{% endif %}" href="/jobs?state=completed"><span>Completed</span><span class="jobs-tab__count">{{ counts.completed }}</span></a>
+            <a class="jobs-tab{% if filter is not none %}{% with s = filter %}{% if s == "partial" %} is-active{% endif %}{% endwith %}{% endif %}" href="/jobs?state=partial"><span>Partial</span><span class="jobs-tab__count">{{ counts.partial }}</span></a>
+            <a class="jobs-tab{% if filter is not none %}{% with s = filter %}{% if s == "failed" %} is-active{% endif %}{% endwith %}{% endif %}" href="/jobs?state=failed"><span>Failed</span><span class="jobs-tab__count">{{ counts.failed }}</span></a>
         </div>
         <div class="jobs-toolbar__right">
             <a class="btn btn--primary btn--sm" href="/jobs/new">
@@ -29,8 +29,8 @@
     </div>
 
     <form method="get" action="/jobs" class="jobs-filterbar">
-        {% match filter %}{% when Some with (s) %}<input type="hidden" name="state" value="{{ s }}">{% when None %}{% endmatch %}
-        {% match run_filter %}{% when Some with (rid) %}<input type="hidden" name="run" value="{{ rid }}">{% when None %}{% endmatch %}
+        {% if filter is not none %}{% with s = filter %}<input type="hidden" name="state" value="{{ s }}">{% endwith %}{% endif %}
+        {% if run_filter is not none %}{% with rid = run_filter %}<input type="hidden" name="run" value="{{ rid }}">{% endwith %}{% endif %}
         <div class="jobs-input">
             <span class="jobs-input__icon">{% include "fragments/icons/link.html" %}</span>
             <input class="jobs-input__field" type="text" name="url" value="{{ url_filter }}" placeholder="URL contains…">
@@ -47,7 +47,7 @@
             <option value="media">media</option>
         </select>
         <span class="muted sans" style="margin-left: auto; font-size: 13px;">
-            {{ snapshots.len() }} of {{ counts.all }} snapshots
+            {{ snapshots|length }} of {{ counts.all }} snapshots
         </span>
     </form>
 

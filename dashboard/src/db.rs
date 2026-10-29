@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::types::Json;
 use sqlx::PgPool;
+use sqlx::types::Json;
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -116,7 +116,7 @@ pub struct DashboardStats {
     pub total_size_bytes: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BackendHealth {
     pub name: String,
     pub port: Option<u16>,
@@ -128,9 +128,9 @@ pub struct BackendHealth {
 
 /// Reformats an RFC3339 timestamp (`2026-04-28T20:56:14Z`) into the
 /// dashboard-wide `YYYY-MM-DD HH:MM:SS` shape by dropping the `T`
-/// separator and trailing `Z`. Shared by `BackendHealth` and
-/// `ProxyHealth`'s `checked_at_display`.
-fn format_checked_at(checked_at: &Option<String>) -> String {
+/// separator and trailing `Z`. The templates' `checked_at_display`
+/// filter applies it to `BackendHealth` and `ProxyHealth`.
+pub(crate) fn format_checked_at(checked_at: &Option<String>) -> String {
     match checked_at {
         Some(s) if s.len() >= 20 && s.as_bytes()[10] == b'T' && s.ends_with('Z') => {
             let mut out = s[..s.len() - 1].to_string();
@@ -155,9 +155,6 @@ impl BackendHealth {
             None => "—".into(),
         }
     }
-    pub fn checked_at_display(&self) -> String {
-        format_checked_at(&self.checked_at)
-    }
     pub fn port_display(&self) -> String {
         match self.port {
             Some(v) => v.to_string(),
@@ -174,13 +171,21 @@ impl BackendHealth {
             _ => 0,
         }
     }
-    pub fn is_ok(&self) -> bool { self.status == "ok" }
-    pub fn is_blocked(&self) -> bool { self.status == "blocked" }
-    pub fn is_timeout(&self) -> bool { self.status == "timeout" }
-    pub fn is_fallback(&self) -> bool { self.name == "brightdata" }
+    pub fn is_ok(&self) -> bool {
+        self.status == "ok"
+    }
+    pub fn is_blocked(&self) -> bool {
+        self.status == "blocked"
+    }
+    pub fn is_timeout(&self) -> bool {
+        self.status == "timeout"
+    }
+    pub fn is_fallback(&self) -> bool {
+        self.name == "brightdata"
+    }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProxyHealth {
     pub checked_at: Option<String>,
     pub target_url: Option<String>,
@@ -193,9 +198,6 @@ impl ProxyHealth {
     }
     pub fn total(&self) -> usize {
         self.backends.len()
-    }
-    pub fn checked_at_display(&self) -> String {
-        format_checked_at(&self.checked_at)
     }
     /// Largest observed latency — feeds `latency_pct` so the latency
     /// bar widths scale to the page. Floor at 1 to avoid div-by-zero
@@ -336,8 +338,7 @@ pub async fn get_state_counts(pool: &PgPool) -> Result<StateCounts, sqlx::Error>
     })
 }
 
-const SNAPSHOT_COLS: &str =
-    "id, run_id, url, state, tags, priority, profile, created_at, updated_at, extracted_title, user_provided_title";
+const SNAPSHOT_COLS: &str = "id, run_id, url, state, tags, priority, profile, created_at, updated_at, extracted_title, user_provided_title";
 
 const RESET_TO_PENDING: &str = "UPDATE archive_results
             SET state = 'pending',
@@ -348,9 +349,9 @@ const RESET_TO_PENDING: &str = "UPDATE archive_results
                 worker_id = NULL";
 
 pub async fn list_snapshots(pool: &PgPool, limit: i64) -> Result<Vec<Snapshot>, sqlx::Error> {
-    sqlx::query_as::<_, Snapshot>(&format!(
+    sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(format!(
         "SELECT {SNAPSHOT_COLS} FROM snapshots ORDER BY created_at DESC LIMIT $1",
-    ))
+    )))
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -391,7 +392,7 @@ pub async fn list_snapshots_filtered(
         " ORDER BY priority DESC, created_at DESC LIMIT {limit_p}"
     ));
 
-    let mut q = sqlx::query_as::<_, Snapshot>(&sql);
+    let mut q = sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(sql));
     if let Some(s) = state_filter {
         q = q.bind(s.to_string());
     }
@@ -408,9 +409,9 @@ pub async fn list_snapshots_filtered(
 }
 
 pub async fn get_snapshot(pool: &PgPool, id: i64) -> Result<Option<Snapshot>, sqlx::Error> {
-    sqlx::query_as::<_, Snapshot>(&format!(
+    sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(format!(
         "SELECT {SNAPSHOT_COLS} FROM snapshots WHERE id = $1",
-    ))
+    )))
     .bind(id)
     .fetch_optional(pool)
     .await
@@ -422,11 +423,11 @@ pub async fn list_url_history(
     exclude_id: i64,
     limit: i64,
 ) -> Result<Vec<Snapshot>, sqlx::Error> {
-    sqlx::query_as::<_, Snapshot>(&format!(
+    sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(format!(
         "SELECT {SNAPSHOT_COLS} FROM snapshots
           WHERE url = $1 AND id != $2
           ORDER BY created_at DESC LIMIT $3",
-    ))
+    )))
     .bind(url)
     .bind(exclude_id)
     .bind(limit)
@@ -452,7 +453,7 @@ pub async fn get_snapshot_results(
 /// the result_id FK so the merged extractor-results-and-artifacts table
 /// can render `extractor (size)` + `download` button without a second
 /// per-row query.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ResultRow {
     pub id: i64,
     pub snapshot_id: i64,
@@ -503,12 +504,10 @@ impl ResultRow {
         match self.extractor.as_str() {
             "monolith" | "wget_warc" | "singlefile" | "browsertrix" => "file_archive",
             "pdf" | "dom_dump" => "file_text",
-            "screenshot"
-            | "bd_screenshot"
-            | "screenshot_mobile"
-            | "screenshot_tablet"
+            "screenshot" | "bd_screenshot" | "screenshot_mobile" | "screenshot_tablet"
             | "screenshot_desktop" => "camera",
             "readability" => "book",
+            "markdown" => "file_text",
             "yt_dlp" => "file_image",
             _ => "file",
         }
@@ -529,6 +528,7 @@ impl ResultRow {
             "dom_dump" => "JS-rendered DOM",
             "singlefile" => "Self-contained HTML",
             "readability" => "Article body, plain",
+            "markdown" => "Markdown for agents",
             "yt_dlp" => "Video / audio",
             "browsertrix" => "WACZ bundle",
             _ => "",
@@ -567,6 +567,75 @@ pub async fn get_snapshot_artifacts(
     .await
 }
 
+/// A snapshot's `markdown` extractor row and, once it completed, the
+/// rendition's metadata (`page.json`, stored as `result_markdown.meta`).
+/// `result_id` is None when the snapshot's profile had no markdown row.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct MarkdownStatus {
+    pub snapshot_id: i64,
+    pub url: String,
+    pub result_id: Option<i64>,
+    pub result_state: Option<String>,
+    pub error: Option<String>,
+    pub completed_at: Option<NaiveDateTime>,
+    pub meta: Option<serde_json::Value>,
+    pub size_bytes: Option<i64>,
+}
+
+pub async fn get_snapshot_markdown(
+    pool: &PgPool,
+    snapshot_id: i64,
+) -> Result<Option<MarkdownStatus>, sqlx::Error> {
+    sqlx::query_as::<_, MarkdownStatus>(
+        "SELECT s.id AS snapshot_id, s.url, ar.id AS result_id, ar.state AS result_state,
+                ar.error, ar.completed_at, rm.meta,
+                octet_length(rm.markdown)::bigint AS size_bytes
+           FROM snapshots s
+      LEFT JOIN archive_results ar ON ar.snapshot_id = s.id AND ar.extractor = 'markdown'
+      LEFT JOIN result_markdown rm ON rm.result_id = ar.id
+          WHERE s.id = $1",
+    )
+    .bind(snapshot_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Newest completed rendition of exactly `url` that finished within the
+/// last `max_age_secs` seconds.
+pub async fn find_fresh_markdown(
+    pool: &PgPool,
+    url: &str,
+    max_age_secs: i64,
+) -> Result<Option<MarkdownStatus>, sqlx::Error> {
+    sqlx::query_as::<_, MarkdownStatus>(
+        "SELECT s.id AS snapshot_id, s.url, ar.id AS result_id, ar.state AS result_state,
+                ar.error, ar.completed_at, rm.meta,
+                octet_length(rm.markdown)::bigint AS size_bytes
+           FROM result_markdown rm
+           JOIN archive_results ar ON ar.id = rm.result_id
+           JOIN snapshots s ON s.id = rm.snapshot_id
+          WHERE s.url = $1
+            AND ar.state = 'completed'
+            AND ar.completed_at >= (now() AT TIME ZONE 'UTC') - make_interval(secs => $2)
+       ORDER BY ar.completed_at DESC
+          LIMIT 1",
+    )
+    .bind(url)
+    .bind(max_age_secs as f64)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_result_markdown(
+    pool: &PgPool,
+    result_id: i64,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT markdown FROM result_markdown WHERE result_id = $1")
+        .bind(result_id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn list_runs(pool: &PgPool, limit: i64) -> Result<Vec<Run>, sqlx::Error> {
     sqlx::query_as::<_, Run>(
         "SELECT id, tags, created_by, created_at
@@ -578,22 +647,17 @@ pub async fn list_runs(pool: &PgPool, limit: i64) -> Result<Vec<Run>, sqlx::Erro
 }
 
 pub async fn get_run(pool: &PgPool, id: i64) -> Result<Option<Run>, sqlx::Error> {
-    sqlx::query_as::<_, Run>(
-        "SELECT id, tags, created_by, created_at FROM runs WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
+    sqlx::query_as::<_, Run>("SELECT id, tags, created_by, created_at FROM runs WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
-pub async fn list_run_snapshots(
-    pool: &PgPool,
-    run_id: i64,
-) -> Result<Vec<Snapshot>, sqlx::Error> {
-    sqlx::query_as::<_, Snapshot>(&format!(
+pub async fn list_run_snapshots(pool: &PgPool, run_id: i64) -> Result<Vec<Snapshot>, sqlx::Error> {
+    sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(format!(
         "SELECT {SNAPSHOT_COLS} FROM snapshots WHERE run_id = $1
           ORDER BY priority DESC, created_at",
-    ))
+    )))
     .bind(run_id)
     .fetch_all(pool)
     .await
@@ -637,13 +701,12 @@ pub async fn create_run_with_snapshots(
         )));
     }
 
-    let (run_id,): (i64,) = sqlx::query_as(
-        "INSERT INTO runs (tags, created_by) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(&tags_value)
-    .bind(created_by)
-    .fetch_one(&mut *tx)
-    .await?;
+    let (run_id,): (i64,) =
+        sqlx::query_as("INSERT INTO runs (tags, created_by) VALUES ($1, $2) RETURNING id")
+            .bind(&tags_value)
+            .bind(created_by)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let mut snapshot_ids = Vec::with_capacity(urls.len());
     for url in urls {
@@ -730,13 +793,12 @@ pub async fn create_manual_snapshot(
 
     let mut tx = pool.begin().await?;
 
-    let (run_id,): (i64,) = sqlx::query_as(
-        "INSERT INTO runs (tags, created_by) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(&tags_value)
-    .bind(created_by)
-    .fetch_one(&mut *tx)
-    .await?;
+    let (run_id,): (i64,) =
+        sqlx::query_as("INSERT INTO runs (tags, created_by) VALUES ($1, $2) RETURNING id")
+            .bind(&tags_value)
+            .bind(created_by)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let title_owned: Option<String> = title.map(|s| s.to_string()).filter(|s| !s.is_empty());
     let snapshot_id: i64 = sqlx::query_scalar(
@@ -806,9 +868,9 @@ pub async fn rearchive_snapshot(
 ) -> Result<i64, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    let original = sqlx::query_as::<_, Snapshot>(&format!(
+    let original = sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(format!(
         "SELECT {SNAPSHOT_COLS} FROM snapshots WHERE id = $1",
-    ))
+    )))
     .bind(snapshot_id)
     .fetch_one(&mut *tx)
     .await?;
@@ -857,12 +919,11 @@ pub async fn rearchive_snapshot(
         .collect();
     let tags_value = serde_json::to_value(&new_tags).unwrap_or(serde_json::Value::Array(vec![]));
 
-    let (run_id,): (i64,) = sqlx::query_as(
-        "INSERT INTO runs (tags, created_by) VALUES ($1, 'rearchive') RETURNING id",
-    )
-    .bind(&tags_value)
-    .fetch_one(&mut *tx)
-    .await?;
+    let (run_id,): (i64,) =
+        sqlx::query_as("INSERT INTO runs (tags, created_by) VALUES ($1, 'rearchive') RETURNING id")
+            .bind(&tags_value)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let new_profile = profile_override
         .map(|s| s.to_string())
@@ -881,9 +942,7 @@ pub async fn rearchive_snapshot(
     .await?;
 
     for extractor in &extractors {
-        let chain = chain_by_extractor
-            .get(extractor)
-            .and_then(|c| c.clone());
+        let chain = chain_by_extractor.get(extractor).and_then(|c| c.clone());
         sqlx::query(
             "INSERT INTO archive_results (snapshot_id, extractor, priority, proxy_chain)
              VALUES ($1, $2, $3, $4)",
@@ -901,10 +960,10 @@ pub async fn rearchive_snapshot(
 }
 
 pub async fn retry_snapshot(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "{RESET_TO_PENDING}
           WHERE snapshot_id = $1 AND state IN ('failed','skipped')",
-    ))
+    )))
     .bind(id)
     .execute(pool)
     .await?;
@@ -912,10 +971,12 @@ pub async fn retry_snapshot(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
 }
 
 pub async fn retry_result(pool: &PgPool, result_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(&format!("{RESET_TO_PENDING} WHERE id = $1"))
-        .bind(result_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "{RESET_TO_PENDING} WHERE id = $1"
+    )))
+    .bind(result_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -940,11 +1001,11 @@ pub async fn delete_snapshot(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> 
 }
 
 pub async fn retry_run(pool: &PgPool, run_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "{RESET_TO_PENDING}
           WHERE snapshot_id IN (SELECT id FROM snapshots WHERE run_id = $1)
             AND state IN ('failed','skipped')",
-    ))
+    )))
     .bind(run_id)
     .execute(pool)
     .await?;
@@ -1113,7 +1174,7 @@ pub struct YoutubeCompanionAuth {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct YoutubeOauthPending {
     pub device_code: String,
     pub user_code: String,
@@ -1143,9 +1204,7 @@ pub struct YoutubeCompanionStatus {
     pub updated_at: NaiveDateTime,
 }
 
-pub async fn get_youtube_auth(
-    pool: &PgPool,
-) -> Result<Option<YoutubeCompanionAuth>, sqlx::Error> {
+pub async fn get_youtube_auth(pool: &PgPool) -> Result<Option<YoutubeCompanionAuth>, sqlx::Error> {
     sqlx::query_as::<_, YoutubeCompanionAuth>(
         "SELECT auth_method, refresh_token, access_token, expires_at, scope,
                 account_email, cookies, updated_at
@@ -1179,10 +1238,7 @@ pub async fn get_youtube_companion_status(
     .await
 }
 
-pub async fn upsert_youtube_cookies(
-    pool: &PgPool,
-    cookies: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn upsert_youtube_cookies(pool: &PgPool, cookies: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO youtube_companion_auth (id, auth_method, cookies)
          VALUES (1, 'cookies', $1)
@@ -1260,15 +1316,14 @@ pub struct ExportData {
 }
 
 pub async fn export_all(pool: &PgPool) -> Result<ExportData, sqlx::Error> {
-    let runs = sqlx::query_as::<_, Run>(
-        "SELECT id, tags, created_by, created_at FROM runs ORDER BY id",
-    )
-    .fetch_all(pool)
-    .await?;
+    let runs =
+        sqlx::query_as::<_, Run>("SELECT id, tags, created_by, created_at FROM runs ORDER BY id")
+            .fetch_all(pool)
+            .await?;
 
-    let snapshots = sqlx::query_as::<_, Snapshot>(&format!(
+    let snapshots = sqlx::query_as::<_, Snapshot>(sqlx::AssertSqlSafe(format!(
         "SELECT {SNAPSHOT_COLS} FROM snapshots ORDER BY id",
-    ))
+    )))
     .fetch_all(pool)
     .await?;
 
@@ -1287,7 +1342,12 @@ pub async fn export_all(pool: &PgPool) -> Result<ExportData, sqlx::Error> {
     .fetch_all(pool)
     .await?;
 
-    Ok(ExportData { runs, snapshots, archive_results, artifacts })
+    Ok(ExportData {
+        runs,
+        snapshots,
+        archive_results,
+        artifacts,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1298,10 +1358,7 @@ pub struct ImportSnapshot {
     pub tags: Option<Vec<String>>,
 }
 
-pub async fn import_snapshots(
-    pool: &PgPool,
-    items: &[ImportSnapshot],
-) -> Result<u64, sqlx::Error> {
+pub async fn import_snapshots(pool: &PgPool, items: &[ImportSnapshot]) -> Result<u64, sqlx::Error> {
     let mut count = 0u64;
     for item in items {
         let urls = vec![item.url.clone()];

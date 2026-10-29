@@ -16,8 +16,8 @@ let
   };
 
   htmx = fetchurl {
-    url = "https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js";
-    hash = "sha256-4gndpcgjVHnzFm3vx3UOHbzVpcGAi3eS/C5nM3aPtEc=";
+    url = "https://unpkg.com/htmx.org@2.0.11/dist/htmx.min.js";
+    hash = "sha256-1v3HXyBOa976mbab8ebUrGm4o2T3eSn0XBNHa0AA9xc=";
   };
 
   commonArgs = {
@@ -50,7 +50,7 @@ runCommand "fetchproxies-dashboard-${commonArgs.version}"
     inherit (commonArgs) version;
     passthru = { inherit binary; };
     meta = {
-      description = "Fetchproxies dashboard (axum + htmx + askama, postgres backend)";
+      description = "Fetchproxies dashboard (axum + htmx + minijinja, postgres backend)";
       mainProgram = "fetchproxies-dashboard";
     };
   }

@@ -8,7 +8,11 @@ let
     ln -s ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
   '';
 
-  pythonEnv = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+  pythonEnv = pkgs.python3.withPackages (ps: [
+    ps.websocket-client
+    ps.beautifulsoup4
+    ps.markdownify
+  ]);
 
   chromiumFullpage = pkgs.writeShellApplication {
     name = "chromium-fullpage";
@@ -18,6 +22,26 @@ let
     ];
     text = ''
       exec ${pythonEnv}/bin/python3 ${./chromium-fullpage.py} "$@"
+    '';
+  };
+
+  pageMarkdownScript = pkgs.runCommand "page-markdown.py" { } ''
+    cp ${./page-markdown.py} page-markdown.py
+    cp ${./test_page_markdown.py} test_page_markdown.py
+    ${pythonEnv}/bin/python3 -I test_page_markdown.py
+    cp page-markdown.py $out
+  '';
+
+  pageMarkdown = pkgs.writeShellApplication {
+    name = "page-markdown";
+    runtimeInputs = [
+      pythonEnv
+      pkgs.curl
+      pkgs.readability-cli
+      pkgs.chromium
+    ];
+    text = ''
+      exec ${pythonEnv}/bin/python3 ${pageMarkdownScript} "$@"
     '';
   };
 in
@@ -32,6 +56,7 @@ pkgs.dockerTools.streamLayeredImage {
     yt-dlp
     chromium
     chromiumFullpage
+    pageMarkdown
     single-file-cli
     readability-cli
     proxychains-ng

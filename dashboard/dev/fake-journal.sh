@@ -51,7 +51,7 @@ scenario_probe_ok() {
 
 scenario_brightdata() {
   local lport=$((40000 + RANDOM % 20000))
-  emit "brightdata-relay.service" 6 "127.0.0.1:$lport ><  brd.superproxy.io:33335"
+  emit "brightdata-relay.service" 6 "127.0.0.1:$lport ><  brd.superproxy.io:44445"
 }
 
 scenario_err() {

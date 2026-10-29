@@ -178,7 +178,7 @@ const Help = () => {
                     <tr><td className="mono">nitter</td><td className="mono">1081</td><td className="mono">vpn-exit → mullvad-{`{de-dus,ch-zrh,at-vie,br-all,us-bos,us-mia}`}</td></tr>
                     <tr><td className="mono">redlib</td><td className="mono">1082</td><td className="mono">mullvad-us-{`{bos,mia,sjc}`} → mullvad-{`{de-dus,ch-zrh,at-vie}`}</td></tr>
                     <tr><td className="mono">archiver</td><td className="mono">1083</td><td className="mono">9× mullvad rotation, then bright-data fallback</td></tr>
-                    <tr><td className="mono">brightdata-relay</td><td className="mono">10819</td><td className="mono">auth-injecting forward to brd.superproxy.io:33335</td></tr>
+                    <tr><td className="mono">brightdata-relay</td><td className="mono">10819</td><td className="mono">auth-injecting forward to brd.superproxy.io:44445</td></tr>
                   </tbody>
                 </table>
               </div>

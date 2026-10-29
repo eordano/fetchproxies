@@ -68,6 +68,11 @@ in
               type = types.port;
               description = "SOCKS5 listen port for this chain";
             };
+            forwarderEnvFile = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = "Optional environment file with PROXY_CHAIN_FORWARDER; the configured backend list is used until it exists.";
+            };
             backends = mkOption {
               type = types.listOf types.str;
               description = ''
@@ -231,7 +236,7 @@ in
 
           tcp dport 9222 accept
 
-          tcp dport 33335 accept
+          tcp dport 44445 accept
 
           meta skuid ${toString config.ids.uids.tor} accept
 
@@ -317,7 +322,14 @@ in
             wantedBy = [ "proxy-chain.service" ];
             partOf = [ "proxy-chain.service" ];
             serviceConfig = {
-              ExecStart = ''${pkgs.gost}/bin/gost -D -L "socks5://:${toString chain.port}?retries=${toString chain.retries}" -F "${chainForwarder chain}"'';
+              EnvironmentFile = lib.optional (chain.forwarderEnvFile != null) "-${chain.forwarderEnvFile}";
+              ExecStart =
+                if chain.forwarderEnvFile == null then
+                  ''${pkgs.gost}/bin/gost -D -L "socks5://:${toString chain.port}?retries=${toString chain.retries}" -F "${chainForwarder chain}"''
+                else
+                  "${pkgs.writeShellScript "proxy-chain-${chainName}-start" ''
+                    exec ${pkgs.gost}/bin/gost -D -L "socks5://:${toString chain.port}?retries=${toString chain.retries}" -F "''${PROXY_CHAIN_FORWARDER:-${chainForwarder chain}}"
+                  ''}";
               DynamicUser = true;
               Restart = "always";
               RestartSec = 5;

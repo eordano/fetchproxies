@@ -4,6 +4,7 @@ set -euo pipefail
 WORKER_ID="worker-$(uname -n)-$$"
 PROXY_SOCKS="${PROXY_SOCKS:-socks5://127.0.0.1:1083}"
 CONTAINER_PROXY="socks5://10.0.2.2:1083"
+ARCHIVE_PUBLIC_URL="${ARCHIVE_PUBLIC_URL:-}"
 
 : "${DATABASE_URL:?DATABASE_URL must be set (postgres URI)}"
 : "${AWS_ENDPOINT_URL:?AWS_ENDPOINT_URL must be set (garage S3 endpoint)}"
@@ -86,6 +87,38 @@ INSERT INTO artifacts (result_id, snapshot_id, path, size_bytes, sha256)
 VALUES ($result_id, $snapshot_id, '$(sqlesc "$artifact_path")', $size, '$(sqlesc "$sha")');
 COMMIT;
 "
+}
+
+complete_markdown_job() {
+  local result_id="$1" snapshot_id="$2" artifact_path="$3" size="$4" sha="$5" workdir="$6"
+  psql -X -q --no-psqlrc -v ON_ERROR_STOP=1 \
+    -v result_id="$result_id" -v snapshot_id="$snapshot_id" \
+    -v artifact_path="$artifact_path" -v size="$size" -v sha="$sha" \
+    -v md_file="$workdir/page.md" -v meta_file="$workdir/page.json" \
+    "$DATABASE_URL" <<'SQL'
+\set md `cat :'md_file'`
+\set meta `cat :'meta_file'`
+BEGIN;
+INSERT INTO result_markdown (result_id, snapshot_id, markdown, meta)
+VALUES (:result_id, :snapshot_id, :'md', :'meta'::jsonb)
+ON CONFLICT (result_id) DO UPDATE
+   SET markdown = EXCLUDED.markdown,
+       meta = EXCLUDED.meta,
+       created_at = (now() AT TIME ZONE 'UTC');
+UPDATE snapshots
+   SET extracted_title = :'meta'::jsonb ->> 'title',
+       updated_at = (now() AT TIME ZONE 'UTC')
+ WHERE id = :snapshot_id
+   AND (extracted_title IS NULL OR extracted_title = '')
+   AND COALESCE(:'meta'::jsonb ->> 'title', '') <> '';
+UPDATE archive_results
+   SET state = 'completed',
+       completed_at = (now() AT TIME ZONE 'UTC')
+ WHERE id = :result_id;
+INSERT INTO artifacts (result_id, snapshot_id, path, size_bytes, sha256)
+VALUES (:result_id, :snapshot_id, :'artifact_path', :size, :'sha');
+COMMIT;
+SQL
 }
 
 extract_html_title() {
@@ -235,7 +268,7 @@ EOC
     browsertrix)
       podman run --rm \
         --runtime=runsc \
-        --network=slirp4netns:allow_host_loopback=true \
+        --network=pasta:--map-gw \
         --volume "$workdir:/crawls:rw" \
         --memory 4g \
         --cpus 2 \
@@ -333,6 +366,11 @@ EOC
                         | readable --base "$2" --quiet > /output/readable.html
                 ' readability-runner "$socks" "$url"
       ;;
+    markdown)
+      run_gvisor_container "$result_id" "$workdir" \
+        page-markdown "$url" /output "$socks" \
+        --archive-url "${ARCHIVE_PUBLIC_URL%/}/artifacts/results/$result_id/"
+      ;;
     *)
       log "ERROR: unknown extractor '$extractor'"
       return 2
@@ -346,7 +384,7 @@ run_gvisor_container() {
 
   podman run --rm \
     --runtime=runsc \
-    --network=slirp4netns:allow_host_loopback=true \
+    --network=pasta:--map-gw \
     --read-only \
     --tmpfs /tmp \
     --volume "$workdir:/output:rw" \
@@ -382,7 +420,11 @@ while true; do
     artifact_key=$(store_artifacts "$result_id" "$workdir")
     size=$(du -sb "$workdir" | cut -f1)
     sha=$(find "$workdir" -type f -exec sha256sum {} + | sha256sum | cut -d' ' -f1)
-    complete_job "$result_id" "$snapshot_id" "$artifact_key" "$size" "$sha"
+    if [ "$extractor" = markdown ]; then
+      complete_markdown_job "$result_id" "$snapshot_id" "$artifact_key" "$size" "$sha" "$workdir"
+    else
+      complete_job "$result_id" "$snapshot_id" "$artifact_key" "$size" "$sha"
+    fi
     title=$(extract_title_from_workdir "$extractor" "$workdir" || true)
     if [ -n "${title:-}" ]; then
       set_snapshot_title_if_empty "$snapshot_id" "$title" &&

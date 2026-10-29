@@ -46,10 +46,10 @@ let
         "${slot.setupUnit}.service"
         "fetchproxies-cgroup-exit-rules.service"
       ];
-      requires = [
-        "${slot.setupUnit}.service"
+      requires = lib.optional u.bindToBackend "${slot.setupUnit}.service" ++ [
         "fetchproxies-cgroup-exit-rules.service"
       ];
+      wants = lib.optional (!u.bindToBackend) "${slot.setupUnit}.service";
       serviceConfig = {
         ExecStartPre = lib.mkAfter [ "+${attach}" ];
         ExecStopPost = [ "+${detach}" ];
@@ -73,6 +73,19 @@ in
           options.backend = mkOption {
             type = types.str;
             description = "Mullvad location name (a key in `services.fetchproxies.mullvad.locations`).";
+          };
+          options.bindToBackend = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether the unit Requires= the location's setup unit, and so is
+              stopped and restarted with it. Turn it off for a server whose
+              inbound service must outlive a dead tunnel: the unit then only
+              Wants= the setup unit (still ordered after it), keeps its socket
+              mark across the watchdog's re-rolls, and the egress guard is
+              what keeps its traffic off the slirp uplink while the tunnel is
+              down.
+            '';
           };
         }
       );

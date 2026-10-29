@@ -1,6 +1,6 @@
 /* ============================================================
    Fetchproxies — shared styles for all variations
-   Built on LocalRock tokens (tokens.css)
+   Built on the design tokens (tokens.css)
    ============================================================ */
 
 html { background: var(--color-background); }

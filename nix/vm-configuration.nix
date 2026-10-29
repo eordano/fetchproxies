@@ -190,6 +190,7 @@
       archiver = {
         port = 1083;
         retries = 12;
+        forwarderEnvFile = "/run/proxy-chain/archiver-forwarder.env";
         backends = archiverBackends;
       };
     };

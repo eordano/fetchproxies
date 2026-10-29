@@ -25,11 +25,10 @@
         </p>
     </header>
 
-    {% match error %}
-    {% when Some with (msg) %}
+    {% if error is not none %}{% with msg = error %}
     <div class="banner-error">{{ msg }}</div>
-    {% when None %}
-    {% endmatch %}
+    {% endwith %}{% else %}
+    {% endif %}
 
     <form method="post" action="/api/jobs/manual" style="max-width: 820px;">
         <div class="field">

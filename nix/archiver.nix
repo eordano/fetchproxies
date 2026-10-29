@@ -45,6 +45,13 @@ in
       description = "Default SOCKS5 proxy for fetch workers";
     };
 
+    publicUrl = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "https://fetch.example.com";
+      description = "Base URL the archive is browsed at (its /artifacts/results/<id>/ listings); markdown renditions link their archive under it. Null leaves the link relative.";
+    };
+
     envFile = mkOption {
       type = types.path;
       default = "/var/lib/fp-secrets/db-and-s3-env";
@@ -214,6 +221,7 @@ in
 
             environment = {
               PROXY_SOCKS = cfg.proxySocks;
+              ARCHIVE_PUBLIC_URL = lib.optionalString (cfg.publicUrl != null) cfg.publicUrl;
               HOME = "/var/lib/fetchproxies";
               XDG_RUNTIME_DIR = "/run/user/999";
               CONTAINERS_CGROUP_MANAGER = "cgroupfs";
@@ -221,7 +229,7 @@ in
 
             path = [
               "/run/wrappers"
-              pkgs.slirp4netns
+              pkgs.passt
             ];
             serviceConfig = {
               ExecStart = "${workerScript}/bin/fetchproxies-worker";

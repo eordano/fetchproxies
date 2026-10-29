@@ -1,12 +1,12 @@
-use crate::{db, templates, AppState};
+use crate::{AppState, db, templates};
 use axum::{
+    Form,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{
-        sse::{Event, KeepAlive, Sse},
         IntoResponse, Json, Redirect,
+        sse::{Event, KeepAlive, Sse},
     },
-    Form,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -43,10 +43,9 @@ pub async fn jobs_list(State(state): S, Query(q): Query<SnapshotsQuery>) -> impl
     let url_f = q.url.as_deref().filter(|s| !s.is_empty());
     let tag_f = q.tag.as_deref().filter(|s| !s.is_empty());
     let state_f = q.state.as_deref().filter(|s| !s.is_empty());
-    let snapshots =
-        db::list_snapshots_filtered(&state.db, state_f, url_f, tag_f, q.run, 100)
-            .await
-            .unwrap();
+    let snapshots = db::list_snapshots_filtered(&state.db, state_f, url_f, tag_f, q.run, 100)
+        .await
+        .unwrap();
     let counts = db::get_state_counts(&state.db).await.unwrap_or_default();
     templates::JobsListTemplate {
         active: "jobs",
@@ -101,12 +100,7 @@ pub async fn job_detail(State(state): S, Path(id): Path<i64>) -> impl IntoRespon
         .as_ref()
         .map(|s| extract_hostname(&s.url))
         .unwrap_or_default();
-    let total_size = format_bytes(
-        results
-            .iter()
-            .filter_map(|r| r.size_bytes)
-            .sum::<i64>(),
-    );
+    let total_size = format_bytes(results.iter().filter_map(|r| r.size_bytes).sum::<i64>());
     let duration = compute_duration(&results);
     let completed_count = results.iter().filter(|r| r.is_completed()).count();
     let completed_summary = format!(
@@ -147,10 +141,7 @@ pub async fn job_detail(State(state): S, Path(id): Path<i64>) -> impl IntoRespon
 /// string if there's no scheme.
 fn extract_hostname(url: &str) -> String {
     let after_scheme = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
-    let host = after_scheme
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or("");
+    let host = after_scheme.split(['/', '?', '#']).next().unwrap_or("");
     host.to_string()
 }
 
@@ -266,14 +257,21 @@ const ALL_LOG_UNITS: &[&str] = &[
 fn strip_log_ts_prefix(s: &str) -> &str {
     let b = s.as_bytes();
     if b.len() < 20
-        || b[4] != b'/' || b[7] != b'/' || b[10] != b' '
-        || b[13] != b':' || b[16] != b':'
+        || b[4] != b'/'
+        || b[7] != b'/'
+        || b[10] != b' '
+        || b[13] != b':'
+        || b[16] != b':'
     {
         return s;
     }
     let digits = |range: std::ops::Range<usize>| range.into_iter().all(|i| b[i].is_ascii_digit());
-    if !(digits(0..4) && digits(5..7) && digits(8..10)
-        && digits(11..13) && digits(14..16) && digits(17..19))
+    if !(digits(0..4)
+        && digits(5..7)
+        && digits(8..10)
+        && digits(11..13)
+        && digits(14..16)
+        && digits(17..19))
     {
         return s;
     }
@@ -302,10 +300,7 @@ fn strip_log_ts_prefix(s: &str) -> &str {
 /// journalctl-shape JSON object per line on stdout, forever. Used by
 /// dev/preview.sh to feed synthetic events when there's no real
 /// journald to read from.
-fn journal_sse(
-    units: &'static [&'static str],
-    override_var: &'static str,
-) -> impl IntoResponse {
+fn journal_sse(units: &'static [&'static str], override_var: &'static str) -> impl IntoResponse {
     let stream = async_stream::stream! {
         let override_cmd = std::env::var(override_var)
             .ok()
@@ -469,12 +464,10 @@ pub async fn api_create_jobs_batch(
     .await
     {
         Ok((run_id, _)) => Redirect::to(&format!("/runs/{}", run_id)),
-        Err(sqlx::Error::RowNotFound) => {
-            Redirect::to(&format!(
-                "/jobs/new?error=profile-unknown&profile={}",
-                profile
-            ))
-        }
+        Err(sqlx::Error::RowNotFound) => Redirect::to(&format!(
+            "/jobs/new?error=profile-unknown&profile={}",
+            profile
+        )),
         Err(_) => Redirect::to("/jobs/new?error=db"),
     }
 }
@@ -486,10 +479,14 @@ pub struct JobsManualQuery {
 
 pub async fn jobs_manual_form(Query(q): Query<JobsManualQuery>) -> impl IntoResponse {
     let error = q.error.map(|code| match code.as_str() {
-        "url-empty" => "Submit a URL — manual snapshots still need a stable identifier.".to_string(),
-        "no-content" =>
-            "Provide at least one of: title, HTML, markdown, or a custom blob.".to_string(),
-        "db" => "Database error while saving the manual snapshot. Try again or check the logs.".to_string(),
+        "url-empty" => {
+            "Submit a URL — manual snapshots still need a stable identifier.".to_string()
+        }
+        "no-content" => {
+            "Provide at least one of: title, HTML, markdown, or a custom blob.".to_string()
+        }
+        "db" => "Database error while saving the manual snapshot. Try again or check the logs."
+            .to_string(),
         other => format!("Submission failed: {}", other),
     });
     templates::JobsManualTemplate {
@@ -553,7 +550,11 @@ pub async fn api_create_manual_snapshot(
     if url.is_empty() {
         return Redirect::to("/jobs/manual?error=url-empty");
     }
-    let title = form.title.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let title = form
+        .title
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
     let contents = collect_manual_contents(&form);
     if title.is_none() && contents.is_empty() {
         return Redirect::to("/jobs/manual?error=no-content");
@@ -608,7 +609,11 @@ pub async fn api_json_create_manual_snapshot(
         )
             .into_response();
     }
-    let title = body.title.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let title = body
+        .title
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
     let mut contents: Vec<db::ManualContent> = Vec::new();
     if let Some(h) = body.html.as_ref().filter(|s| !s.is_empty()) {
         contents.push(db::ManualContent {
@@ -705,7 +710,7 @@ pub struct RearchiveForm {
 pub async fn api_rearchive_snapshot(
     State(state): S,
     Path(id): Path<i64>,
-    form: Option<Form<RearchiveForm>>,
+    form: Result<Form<RearchiveForm>, axum::extract::rejection::FormRejection>,
 ) -> impl IntoResponse {
     let form = form.map(|Form(f)| f).unwrap_or_default();
     let profile = form.profile.as_deref().filter(|s| !s.is_empty());
@@ -732,8 +737,12 @@ pub async fn api_delete_run(State(state): S, Path(id): Path<i64>) -> impl IntoRe
 
 pub async fn nitter_page(State(state): S) -> impl IntoResponse {
     let status = db::get_nitter_mint_status(&state.db).await.unwrap_or(None);
-    let override_row = db::get_nitter_creds_override(&state.db).await.unwrap_or(None);
-    let egress = db::get_egress_mode(&state.db, "nitter").await.unwrap_or(None);
+    let override_row = db::get_nitter_creds_override(&state.db)
+        .await
+        .unwrap_or(None);
+    let egress = db::get_egress_mode(&state.db, "nitter")
+        .await
+        .unwrap_or(None);
     templates::NitterTemplate {
         active: "nitter",
         status,
@@ -799,16 +808,28 @@ pub async fn api_set_egress(
     )
     .await;
     crate::supervisor::regenerate_all(&state.db).await;
-    let redirect = if service == "nitter" { "/nitter" } else { "/youtube" };
+    let redirect = if service == "nitter" {
+        "/nitter"
+    } else {
+        "/youtube"
+    };
     Redirect::to(redirect).into_response()
 }
 
 pub async fn youtube_page(State(state): S) -> impl IntoResponse {
     let auth = db::get_youtube_auth(&state.db).await.unwrap_or(None);
-    let pending = db::get_youtube_oauth_pending(&state.db).await.unwrap_or(None);
-    let status = db::get_youtube_companion_status(&state.db).await.unwrap_or(None);
-    let egress_companion = db::get_egress_mode(&state.db, "companion").await.unwrap_or(None);
-    let egress_invidious = db::get_egress_mode(&state.db, "invidious").await.unwrap_or(None);
+    let pending = db::get_youtube_oauth_pending(&state.db)
+        .await
+        .unwrap_or(None);
+    let status = db::get_youtube_companion_status(&state.db)
+        .await
+        .unwrap_or(None);
+    let egress_companion = db::get_egress_mode(&state.db, "companion")
+        .await
+        .unwrap_or(None);
+    let egress_invidious = db::get_egress_mode(&state.db, "invidious")
+        .await
+        .unwrap_or(None);
     templates::YoutubeTemplate {
         active: "youtube",
         auth,
@@ -918,9 +939,130 @@ pub async fn api_json_snapshot_results(State(state): S, Path(id): Path<i64>) -> 
     }
 }
 
-pub async fn api_json_snapshot_artifacts(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+pub async fn api_json_snapshot_artifacts(
+    State(state): S,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
     match db::get_snapshot_artifacts(&state.db, id).await {
         Ok(a) => Json(a).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Where a result's archive listing is browsed: the link the worker baked
+/// into the rendition when it is absolute, else `/artifacts/results/<id>/`
+/// under the dashboard's PUBLIC_URL, else that path alone.
+fn archive_url(result_id: i64, baked: Option<&str>, public_url: Option<&str>) -> String {
+    if let Some(b) = baked.filter(|b| b.starts_with("https://") || b.starts_with("http://")) {
+        return b.to_string();
+    }
+    let path = format!("/artifacts/results/{}/", result_id);
+    match public_url.filter(|u| !u.is_empty()) {
+        Some(base) => format!("{}{}", base.trim_end_matches('/'), path),
+        None => path,
+    }
+}
+
+/// `missing` when the snapshot has no markdown row (its profile lacked the
+/// extractor), otherwise the row's queue state.
+fn markdown_state(m: &db::MarkdownStatus) -> &str {
+    match (m.result_state.as_deref(), m.meta.is_some()) {
+        (None, _) | (Some("completed"), false) => "missing",
+        (Some(s), _) => s,
+    }
+}
+
+fn markdown_status_json(m: &db::MarkdownStatus, public_url: Option<&str>) -> serde_json::Value {
+    let meta = m.meta.clone().unwrap_or(serde_json::Value::Null);
+    let field = |k: &str| meta.get(k).cloned().unwrap_or(serde_json::Value::Null);
+    let state = markdown_state(m);
+    let fetched_at = match meta.get("fetched_at") {
+        Some(v) if v.is_string() => v.clone(),
+        _ => m
+            .completed_at
+            .map(|t| serde_json::Value::String(t.format("%Y-%m-%dT%H:%M:%SZ").to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    };
+    serde_json::json!({
+        "snapshot_id": m.snapshot_id,
+        "url": m.url,
+        "state": state,
+        "result_id": m.result_id,
+        "error": m.error,
+        "fetched_at": fetched_at,
+        "title": field("title"),
+        "final_url": field("final_url"),
+        "http_status": field("http_status"),
+        "content_type": field("content_type"),
+        "rendition": field("rendition"),
+        "truncated": field("truncated"),
+        "size_bytes": m.size_bytes,
+        "archive_url": m.result_id.map(|id| archive_url(id, meta.get("archive").and_then(|v| v.as_str()), public_url)),
+        "markdown_url": m.result_id.filter(|_| state == "completed").map(|id| format!("/api/v1/results/{}/markdown", id)),
+    })
+}
+
+/// `max_age` defaults to a day and is held to 0..=30 days.
+fn clamp_max_age(v: Option<i64>) -> i64 {
+    v.unwrap_or(86_400).clamp(0, 30 * 86_400)
+}
+
+pub async fn api_json_snapshot_markdown(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    match db::get_snapshot_markdown(&state.db, id).await {
+        Ok(Some(m)) => Json(markdown_status_json(&m, state.public_url.as_deref())).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "no such snapshot"})),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct MarkdownLookup {
+    url: String,
+    max_age: Option<i64>,
+}
+
+pub async fn api_json_markdown_lookup(
+    State(state): S,
+    Query(q): Query<MarkdownLookup>,
+) -> impl IntoResponse {
+    let url = q.url.trim();
+    if url.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "url is required"})),
+        )
+            .into_response();
+    }
+    match db::find_fresh_markdown(&state.db, url, clamp_max_age(q.max_age)).await {
+        Ok(Some(m)) => Json(markdown_status_json(&m, state.public_url.as_deref())).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "no markdown rendition of this URL within max_age"})),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn api_result_markdown(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
+    match db::get_result_markdown(&state.db, id).await {
+        Ok(Some(md)) => (
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/markdown; charset=utf-8",
+            )],
+            md,
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            "no markdown rendition for this result",
+        )
+            .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -935,7 +1077,9 @@ pub async fn api_json_runs(State(state): S) -> impl IntoResponse {
 pub async fn api_json_run(State(state): S, Path(id): Path<i64>) -> impl IntoResponse {
     match db::get_run(&state.db, id).await {
         Ok(Some(r)) => {
-            let snapshots = db::list_run_snapshots(&state.db, id).await.unwrap_or_default();
+            let snapshots = db::list_run_snapshots(&state.db, id)
+                .await
+                .unwrap_or_default();
             Json(serde_json::json!({"run": r, "snapshots": snapshots})).into_response()
         }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
@@ -968,7 +1112,7 @@ pub async fn api_json_create_snapshot(
         (_, Some(us)) => us,
         (Some(u), None) => vec![u],
         (None, None) => {
-            return (StatusCode::BAD_REQUEST, "must supply url or urls").into_response()
+            return (StatusCode::BAD_REQUEST, "must supply url or urls").into_response();
         }
     }
     .into_iter()
@@ -976,7 +1120,10 @@ pub async fn api_json_create_snapshot(
     .collect();
 
     if urls.is_empty() {
-        return (StatusCode::BAD_REQUEST, "urls must contain at least one non-empty URL")
+        return (
+            StatusCode::BAD_REQUEST,
+            "urls must contain at least one non-empty URL",
+        )
             .into_response();
     }
 
@@ -1045,7 +1192,7 @@ const OPENAPI_JSON: &str = r##"{
         "properties": {
           "url":         { "type": "string", "description": "Single URL to archive (one of url or urls is required)" },
           "urls":        { "type": "array", "items": { "type": "string" }, "description": "Multiple URLs; all share profile/tags/proxy_chain and land in one run" },
-          "profile":     { "type": "string", "enum": ["full","compare","lightweight","warc_only","media","bd_only"], "default": "full" },
+          "profile":     { "type": "string", "enum": ["full","compare","lightweight","warc_only","media","screenshots","bd_only","agent"], "default": "full" },
           "priority":    { "type": "integer", "default": 0, "minimum": -10, "maximum": 10 },
           "tags":        { "type": "array", "items": { "type": "string" } },
           "proxy_chain": { "type": "string", "description": "Optional SOCKS URL applied to every fanned-out extractor row, overriding the archiver default (socks5://127.0.0.1:1083)" }
@@ -1075,6 +1222,16 @@ const OPENAPI_JSON: &str = r##"{
     "/api/v1/snapshots/{id}":           { "get": { "summary": "One snapshot",          "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"Snapshot"}, "404":{"description":"Not found"} } } },
     "/api/v1/snapshots/{id}/results":   { "get": { "summary": "Per-extractor results", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"Array"} } } },
     "/api/v1/snapshots/{id}/artifacts": { "get": { "summary": "Artifacts",             "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"Array"} } } },
+    "/api/v1/snapshots/{id}/markdown":  { "get": { "summary": "The snapshot's markdown rendition: state (pending, running, completed, failed, skipped, missing), result_id, fetched_at, title, archive_url, markdown_url", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"MarkdownStatus"}, "404":{"description":"No such snapshot"} } } },
+    "/api/v1/markdown": {
+      "get": { "summary": "Newest completed markdown rendition of exactly this URL",
+               "parameters": [
+                 { "name": "url",     "in": "query", "required": true, "schema": { "type": "string" } },
+                 { "name": "max_age", "in": "query", "schema": { "type": "integer", "default": 86400, "minimum": 0, "maximum": 2592000 }, "description": "Seconds since the rendition completed" }
+               ],
+               "responses": { "200": { "description": "MarkdownStatus" }, "404": { "description": "None within max_age" } } }
+    },
+    "/api/v1/results/{id}/markdown": { "get": { "summary": "The rendition itself (text/markdown; front matter, then the page); /api/results/{id}/markdown is the same", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"text/markdown"}, "404":{"description":"No rendition for this result"} } } },
 
     "/api/v1/runs":      { "get": { "summary": "List recent runs",                       "responses": { "200": { "description": "Array" } } } },
     "/api/v1/runs/{id}": { "get": { "summary": "Run detail with embedded snapshots[]", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ], "responses": { "200": {"description":"{run, snapshots}"}, "404":{"description":"Not found"} } } },
@@ -1149,4 +1306,67 @@ pub async fn proxy_log_page() -> impl IntoResponse {
 
 pub async fn proxy_log_stream() -> impl IntoResponse {
     journal_sse(ALL_LOG_UNITS, "JOURNAL_COMMAND_LOGS")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status(state: Option<&str>, meta: Option<serde_json::Value>) -> db::MarkdownStatus {
+        db::MarkdownStatus {
+            snapshot_id: 3,
+            url: "https://example.com/".into(),
+            result_id: state.map(|_| 7),
+            result_state: state.map(String::from),
+            error: None,
+            completed_at: chrono::NaiveDate::from_ymd_opt(2026, 10, 29)
+                .and_then(|d| d.and_hms_opt(10, 0, 0)),
+            meta,
+            size_bytes: Some(1234),
+        }
+    }
+
+    #[test]
+    fn archive_links_prefer_the_baked_absolute_url() {
+        assert_eq!(
+            archive_url(7, Some("https://fetch.example/artifacts/results/7/"), Some("https://other")),
+            "https://fetch.example/artifacts/results/7/"
+        );
+        assert_eq!(
+            archive_url(7, Some("/artifacts/results/7/"), Some("https://fetch.example/")),
+            "https://fetch.example/artifacts/results/7/"
+        );
+        assert_eq!(archive_url(7, None, None), "/artifacts/results/7/");
+    }
+
+    #[test]
+    fn markdown_status_reports_state_and_links() {
+        let meta = serde_json::json!({"title": "T", "fetched_at": "2026-10-29T09:59:00Z", "http_status": 200,
+                                      "archive": "/artifacts/results/7/", "truncated": false});
+        let done = markdown_status_json(&status(Some("completed"), Some(meta)), Some("https://fetch.example"));
+        assert_eq!(done["state"], "completed");
+        assert_eq!(done["title"], "T");
+        assert_eq!(done["fetched_at"], "2026-10-29T09:59:00Z");
+        assert_eq!(done["archive_url"], "https://fetch.example/artifacts/results/7/");
+        assert_eq!(done["markdown_url"], "/api/v1/results/7/markdown");
+
+        let running = markdown_status_json(&status(Some("running"), None), None);
+        assert_eq!(running["state"], "running");
+        assert!(running["markdown_url"].is_null());
+
+        let missing = markdown_status_json(&status(None, None), None);
+        assert_eq!(missing["state"], "missing");
+        assert!(missing["archive_url"].is_null());
+
+        let no_meta = markdown_status_json(&status(Some("completed"), None), None);
+        assert_eq!(no_meta["state"], "missing");
+        assert_eq!(no_meta["fetched_at"], "2026-10-29T10:00:00Z");
+    }
+
+    #[test]
+    fn max_age_is_bounded() {
+        assert_eq!(clamp_max_age(None), 86_400);
+        assert_eq!(clamp_max_age(Some(-5)), 0);
+        assert_eq!(clamp_max_age(Some(i64::MAX)), 30 * 86_400);
+    }
 }

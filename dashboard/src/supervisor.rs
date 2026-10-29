@@ -1,4 +1,3 @@
-
 use crate::db;
 use sqlx::PgPool;
 use std::path::Path;
@@ -54,7 +53,10 @@ async fn render_companion(pool: &PgPool) -> std::io::Result<()> {
         }
         Some("cookies") => {
             lines.push("YOUTUBE_SESSION_OAUTH_ENABLED=false".to_string());
-            let raw = auth.as_ref().and_then(|a| a.cookies.as_deref()).unwrap_or("");
+            let raw = auth
+                .as_ref()
+                .and_then(|a| a.cookies.as_deref())
+                .unwrap_or("");
             lines.push(format!("YOUTUBE_SESSION_COOKIES={}", shell_quote(raw)));
             lines.push("JOBS_YOUTUBE_SESSION_PO_TOKEN_ENABLED=false".to_string());
         }

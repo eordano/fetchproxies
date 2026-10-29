@@ -16,9 +16,8 @@ let
     "${name}:${toString loc.socksPort}"
   ) (lib.attrNames mullvadCfg.locations);
 
-  fallbackAllProxy = lib.concatMapStringsSep "," (
-    loc: "socks5://127.0.0.1:${toString loc.socksPort}"
-  ) (lib.attrValues mullvadCfg.locations);
+  fallbackProxy = "socks5://127.0.0.1:10819";
+  unavailableProxy = "socks5://127.0.0.1:1";
 
   probeScript = pkgs.writeShellApplication {
     name = "fetchproxies-proxy-probe";
@@ -36,31 +35,19 @@ let
 
       health='${cfg.healthPath}'
       env_file=/run/proxy-chain/redlib-backends.env
+      archiver_env_file=/run/proxy-chain/archiver-forwarder.env
       now=$(date -u +%FT%TZ)
 
       install -d -m 0755 /run/proxy-chain
       install -d -m 0750 -o fetchproxies -g fetchproxies "$(dirname "$health")"
 
-      prev=$(cat "$health" 2>/dev/null || echo '{}')
-
       results='{}'
-      for spec in "$@"; do
+      for spec in "$@" brightdata:10819; do
         IFS=':' read -r name socks_port <<< "$spec"
 
-        prev_status=$(printf '%s' "$prev" | jq -r --arg n "$name" \
-          '.backends[$n].status // "unknown"')
-
-        if [ "$prev_status" = "ok" ]; then
-          carried=$(printf '%s' "$prev" | jq --arg n "$name" \
-            '.backends[$n] + { carried_from: .backends[$n].checked_at // null }')
-          results=$(printf '%s' "$results" | jq \
-            --arg n "$name" --argjson o "$carried" \
-            '. + { ($n): $o }')
-          continue
-        fi
-
         t0=$(date +%s%N)
-        code=$(curl -sS -m 15 -x "socks5h://127.0.0.1:''${socks_port}" \
+        code=$(curl -sS -m 15 --location --max-redirs 3 \
+          -x "socks5h://127.0.0.1:''${socks_port}" \
           "$probe_url" -o /dev/null -w '%{http_code}' 2>/dev/null) \
           || code=""
         t1=$(date +%s%N)
@@ -70,7 +57,7 @@ let
           status=timeout
           http_code_json=null
           latency_ms=null
-        elif [ "$code" = "200" ]; then
+        elif [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
           status=ok
           http_code_json="$code"
         else
@@ -96,21 +83,21 @@ let
         > "$health.tmp"
 
       ports=$(jq -r '.backends | to_entries
-        | map(select(.value.status == "ok"))
+        | map(select(.key != "brightdata" and .value.status == "ok"))
         | sort_by(.value.latency_ms // 9.9e9)
         | map(.value.port) | join(",")' "$health.tmp")
-
-      jq --arg t "$now" \
-        '.backends.brightdata = { port: 10819, status: "ok", http_code: 200, latency_ms: null, checked_at: $t }' \
-        "$health.tmp" > "$health.tmp2"
-      mv "$health.tmp2" "$health.tmp"
 
       chown fetchproxies:fetchproxies "$health.tmp" 2>/dev/null || true
       chmod 0644 "$health.tmp"
       mv "$health.tmp" "$health"
 
+      brightdata_ok=$(jq -r '.backends.brightdata.status == "ok"' "$health")
       if [ -z "$ports" ]; then
-        all_proxy='${fallbackAllProxy}'
+        if [ "$brightdata_ok" = true ]; then
+          all_proxy='${fallbackProxy}'
+        else
+          all_proxy='${unavailableProxy}'
+        fi
       else
         all_proxy=$(printf '%s' "$ports" | tr ',' '\n' \
           | sed 's|^|socks5://127.0.0.1:|' | paste -sd, -)
@@ -123,6 +110,27 @@ let
         mv "$env_file.tmp" "$env_file"
         systemctl --no-block try-restart redlib.service || true
       fi
+
+      archiver_ports="$ports"
+      if [ -z "$archiver_ports" ] && [ "$brightdata_ok" = true ]; then
+        archiver_ports=10819
+      fi
+      new_archiver_env=""
+      if [ -n "$archiver_ports" ]; then
+        archiver_nodes=$(printf '%s' "$archiver_ports" | tr ',' '\n' \
+          | sed 's|^|127.0.0.1:|' | paste -sd, -)
+        new_archiver_env="PROXY_CHAIN_FORWARDER=socks5://$archiver_nodes?strategy=fifo&maxFails=1&failTimeout=30s"
+      fi
+      old_archiver_env=$(cat "$archiver_env_file" 2>/dev/null || true)
+      if [ "$new_archiver_env" != "$old_archiver_env" ]; then
+        if [ -n "$new_archiver_env" ]; then
+          printf '%s\n' "$new_archiver_env" > "$archiver_env_file.tmp"
+          mv "$archiver_env_file.tmp" "$archiver_env_file"
+        else
+          rm -f "$archiver_env_file"
+        fi
+        systemctl --no-block try-restart proxy-chain-archiver.service || true
+      fi
     '';
   };
 in
@@ -131,10 +139,10 @@ in
     enable = lib.mkEnableOption "HTTP-aware Mullvad SOCKS backend probe";
     probeUrl = lib.mkOption {
       type = lib.types.str;
-      default = "https://www.reddit.com/r/programming";
+      default = "https://www.reddit.com/r/programming/";
       description = ''
         URL fetched through each SOCKS backend to check connectivity.
-        A 200 means the tunnel is live and unblocked.
+        A 2xx final response means the tunnel is live and unblocked.
       '';
     };
     healthPath = lib.mkOption {
@@ -151,9 +159,8 @@ in
       type = lib.types.str;
       default = "1h";
       description = ''
-        Probe interval (passed to systemd OnUnitActiveSec). Combined with
-        the skip-already-ok logic, an hourly cadence keeps probe traffic
-        proportional to broken-tunnel count.
+        Probe interval (passed to systemd OnUnitActiveSec). Every backend
+        is checked on each run so a previously healthy tunnel can fail.
       '';
     };
   };
@@ -162,7 +169,7 @@ in
     systemd.tmpfiles.settings."10-fetchproxies-redlib-fallback"."/run/proxy-chain/redlib-backends.env"."f" =
       {
         mode = "0644";
-        argument = "ALL_PROXY=${fallbackAllProxy}";
+        argument = "ALL_PROXY=${unavailableProxy}";
       };
 
     systemd.services.fetchproxies-proxy-probe = {

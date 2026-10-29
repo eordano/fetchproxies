@@ -134,6 +134,7 @@ curl -x https://proxy.example.com:8443 https://api.ipify.org</code></pre>
                             <tr><td class="mono">dom_dump</td><td class="mono">chromium --dump-dom</td><td><span class="mono">dom.html</span></td><td>JS executed</td></tr>
                             <tr><td class="mono">singlefile</td><td class="mono">single-file-cli</td><td><span class="mono">page.html</span></td><td>Self-contained</td></tr>
                             <tr><td class="mono">readability</td><td class="mono">readability-cli</td><td><span class="mono">readable.html</span></td><td>Article-mode extraction</td></tr>
+                            <tr><td class="mono">markdown</td><td class="mono">page-markdown</td><td><span class="mono">page.md</span> + <span class="mono">source.*</span></td><td>Markdown for agents: front matter, then the page without scripts or navigation; ≤ 256 KiB</td></tr>
                             <tr><td class="mono">yt_dlp</td><td class="mono">yt-dlp</td><td><span class="mono">data/&lt;title&gt;.&lt;ext&gt;</span></td><td>Video / audio</td></tr>
                             <tr><td class="mono">browsertrix</td><td>browsertrix-crawler</td><td>WACZ bundle</td><td>SPA-friendly</td></tr>
                         </tbody>
@@ -145,10 +146,11 @@ curl -x https://proxy.example.com:8443 https://api.ipify.org</code></pre>
                 <h2>Profiles</h2>
                 <p>Pick one when submitting a snapshot — fans out into one row per extractor.</p>
                 <ul class="help-profiles">
-                    <li><span class="mono help-prof-name">full</span><span class="muted">→</span><span class="mono">wget_warc, monolith, screenshot, screenshot_mobile, screenshot_tablet, screenshot_desktop, readability, pdf</span><span></span></li>
+                    <li><span class="mono help-prof-name">full</span><span class="muted">→</span><span class="mono">wget_warc, monolith, screenshot, screenshot_mobile, screenshot_tablet, screenshot_desktop, readability, markdown, pdf</span><span></span></li>
                     <li><span class="mono help-prof-name">compare</span><span class="muted">→</span><span class="mono">full + bd_screenshot</span> <span class="help-prof-note">mullvad-vs-bright-data side-by-side</span></li>
                     <li><span class="mono help-prof-name">screenshots</span><span class="muted">→</span><span class="mono">screenshot_mobile, screenshot_tablet, screenshot_desktop, screenshot</span> <span class="help-prof-note">resolution sweep, no archive</span></li>
-                    <li><span class="mono help-prof-name">lightweight</span><span class="muted">→</span><span class="mono">monolith, readability</span><span></span></li>
+                    <li><span class="mono help-prof-name">lightweight</span><span class="muted">→</span><span class="mono">monolith, readability, markdown</span><span></span></li>
+                    <li><span class="mono help-prof-name">agent</span><span class="muted">→</span><span class="mono">markdown</span> <span class="help-prof-note">what the agents' web_fetch broker submits</span></li>
                     <li><span class="mono help-prof-name">media</span><span class="muted">→</span><span class="mono">yt_dlp</span><span></span></li>
                     <li><span class="mono help-prof-name">warc_only</span><span class="muted">→</span><span class="mono">wget_warc</span><span></span></li>
                     <li><span class="mono help-prof-name">bd_only</span><span class="muted">→</span><span class="mono">bd_screenshot</span><span></span></li>
@@ -167,7 +169,7 @@ curl -x https://proxy.example.com:8443 https://api.ipify.org</code></pre>
                             <tr><td class="mono">nitter</td><td class="mono">1081</td><td class="mono">vpn-exit → mullvad-{de-dus,ch-zrh,at-vie,br-all,us-bos,us-mia}</td></tr>
                             <tr><td class="mono">redlib</td><td class="mono">1082</td><td class="mono">mullvad-us-{bos,mia,sjc} → mullvad-{de-dus,ch-zrh,at-vie}</td></tr>
                             <tr><td class="mono">archiver</td><td class="mono">1083</td><td class="mono">9× mullvad rotation, then bright-data fallback</td></tr>
-                            <tr><td class="mono">brightdata-relay</td><td class="mono">10819</td><td class="mono">auth-injecting forward to brd.superproxy.io:33335</td></tr>
+                            <tr><td class="mono">brightdata-relay</td><td class="mono">10819</td><td class="mono">auth-injecting forward to brd.superproxy.io:44445</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -187,6 +189,9 @@ curl -x https://proxy.example.com:8443 https://api.ipify.org</code></pre>
                             <tr><td><span class="http http--get">GET</span></td><td class="mono">/api/v1/snapshots/&lt;id&gt;</td><td>One snapshot</td></tr>
                             <tr><td><span class="http http--get">GET</span></td><td class="mono">/api/v1/snapshots/&lt;id&gt;/results</td><td>Extractor rows</td></tr>
                             <tr><td><span class="http http--get">GET</span></td><td class="mono">/api/v1/snapshots/&lt;id&gt;/artifacts</td><td>Files written by completed extractors</td></tr>
+                            <tr><td><span class="http http--get">GET</span></td><td class="mono">/api/v1/snapshots/&lt;id&gt;/markdown</td><td>The markdown rendition's state, title, fetch time and links</td></tr>
+                            <tr><td><span class="http http--get">GET</span></td><td class="mono">/api/v1/markdown?url=&amp;max_age=</td><td>Newest rendition of exactly that URL, no older than <span class="mono">max_age</span> seconds</td></tr>
+                            <tr><td><span class="http http--get">GET</span></td><td class="mono">/api/results/&lt;id&gt;/markdown</td><td>The rendition as <span class="mono">text/markdown</span></td></tr>
                             <tr><td><span class="http http--post">POST</span></td><td class="mono">/api/snapshots/&lt;id&gt;/retry</td><td>Requeue every failed/skipped result</td></tr>
                             <tr><td><span class="http http--post">POST</span></td><td class="mono">/api/snapshots/&lt;id&gt;/cancel</td><td>Mark pending+running results skipped</td></tr>
                             <tr><td><span class="http http--post">POST</span></td><td class="mono">/api/snapshots/&lt;id&gt;/delete</td><td>Cascade-delete the row</td></tr>

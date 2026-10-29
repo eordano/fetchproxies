@@ -44,6 +44,9 @@ in
         DASHBOARD_PORT = toString cfg.port;
         DASHBOARD_STATIC_DIR = "${dashboardPackage}/share/fetchproxies-dashboard/static";
         RUST_LOG = "info";
+      }
+      // lib.optionalAttrs (archiverCfg.publicUrl or null != null) {
+        PUBLIC_URL = archiverCfg.publicUrl;
       };
 
       serviceConfig = {

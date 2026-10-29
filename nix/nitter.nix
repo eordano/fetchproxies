@@ -23,6 +23,12 @@ in
       description = "Public hostname shown in nitter config.";
     };
 
+    theme = mkOption {
+      type = types.str;
+      default = "Nitter";
+      description = "Default UI theme; must be one the nitter build ships.";
+    };
+
     proxyChainPort = mkOption {
       type = types.port;
       default = 1081;
@@ -103,6 +109,7 @@ in
       hostname = "${cfg.domain}"
       address = "0.0.0.0"
       port = ${toString cfg.port}
+      staticDir = "${pkgs.nitter}/share/nitter/public"
 
       [Config]
       hmacKey = "@HMAC_KEY@"
@@ -120,7 +127,7 @@ in
       redisMaxConnections = 30
 
       [Preferences]
-      theme = "LocalRock"
+      theme = "${cfg.theme}"
     '';
 
     services.redis.servers.nitter = {

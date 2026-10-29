@@ -18,11 +18,10 @@
         </p>
     </header>
 
-    {% match error %}
-    {% when Some with (msg) %}
+    {% if error is not none %}{% with msg = error %}
     <div class="banner-error">{{ msg }}</div>
-    {% when None %}
-    {% endmatch %}
+    {% endwith %}{% else %}
+    {% endif %}
 
     <form method="post" action="/api/jobs" style="max-width: 720px;">
         <div class="field">
@@ -35,10 +34,11 @@
         <div class="field">
             <label class="field__label" for="profile">Profile</label>
             <select class="select" id="profile" name="profile" style="min-width: 320px;">
-                <option value="full" selected>full — wget_warc + monolith + screenshots (mobile/tablet/desktop/1920) + readability + pdf</option>
+                <option value="full" selected>full — wget_warc + monolith + screenshots (mobile/tablet/desktop/1920) + readability + markdown + pdf</option>
                 <option value="compare">compare — full + bd_screenshot (mullvad vs. bright-data)</option>
                 <option value="screenshots">screenshots — mobile + tablet + desktop + 1920 (no archive)</option>
-                <option value="lightweight">lightweight — monolith + readability</option>
+                <option value="lightweight">lightweight — monolith + readability + markdown</option>
+                <option value="agent">agent — markdown only (what web_fetch submits)</option>
                 <option value="warc_only">warc_only — wget_warc only (full http provenance)</option>
                 <option value="media">media — yt_dlp (video / audio)</option>
                 <option value="bd_only">bd_only — bd_screenshot direct</option>

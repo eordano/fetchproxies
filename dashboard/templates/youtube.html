@@ -1,14 +1,12 @@
 {% extends "base.html" %}
 {% block title %}youtube — fetchproxies{% endblock %}
 {% block head %}
-{% match pending %}
-{% when Some with (_) %}<meta http-equiv="refresh" content="5">{% when None %}{% endmatch %}
+{% if pending is not none %}<meta http-equiv="refresh" content="5">{% endif %}
 {% endblock %}
 {% block content %}
 <div class="page-main">
 
-{% match pending %}
-{% when Some with (p) %}
+{% if pending is not none %}{% with p = pending %}
     <header class="hero">
         <div class="row gap-3" style="margin-bottom: 8px;">
             <span class="label">Sign-in</span>
@@ -24,23 +22,22 @@
             <li>
                 Enter this code:
                 <div><span class="code-pill">{{ p.user_code }}</span></div>
-                <span class="pending-meta">Tap to select. Expires in {{ p.minutes_until_expiry() }} min, at {{ p.expires_at.format("%H:%M") }} UTC.</span>
+                <span class="pending-meta">Tap to select. Expires in {{ p|minutes_until_expiry }} min, at {{ p.expires_at|strftime("%H:%M") }} UTC.</span>
             </li>
             <li>
                 Confirm "<em>Allow YouTube on TV</em>". This page auto-refreshes every 5s; once Google reports success, companion stores the credentials on disk and you'll see a confirmation banner here.
             </li>
         </ol>
-        {% match p.last_error %}{% when Some with (e) %}<p style="color: var(--color-danger-strong);">last poll error: {{ e }}</p>{% when None %}{% endmatch %}
+        {% if p.last_error is not none %}{% with e = p.last_error %}<p style="color: var(--color-danger-strong);">last poll error: {{ e }}</p>{% endwith %}{% endif %}
         <form method="post" action="/api/youtube/auth/clear" class="actions-row" style="margin-top: var(--space-4);">
             <button class="btn btn--danger" type="submit">{% include "fragments/icons/x.html" %} Cancel sign-in</button>
             <span class="muted" style="font-family: var(--font-sans); font-size: 13px;">stops the device flow and clears the pending code.</span>
         </form>
     </div>
-{% when None %}
+{% endwith %}{% else %}
 
-{% match auth %}
-{% when Some with (a) %}
-{% if a.auth_method == "oauth" || a.auth_method == "cookies" %}
+{% if auth is not none %}{% with a = auth %}
+{% if a.auth_method == "oauth" or a.auth_method == "cookies" %}
     <header class="hero">
         <div class="row gap-3" style="margin-bottom: 8px;">
             <span class="label">Authentication</span>
@@ -50,17 +47,17 @@
     <div class="auth-success">
         <h2>Signed in via {{ a.auth_method }}</h2>
         {% if a.auth_method == "oauth" %}
-        {% match a.account_email %}{% when Some with (e) %}<p style="margin: var(--space-1) 0;">Account: <span class="mono">{{ e }}</span>.</p>{% when None %}{% endmatch %}
+        {% if a.account_email is not none %}{% with e = a.account_email %}<p style="margin: var(--space-1) 0;">Account: <span class="mono">{{ e }}</span>.</p>{% endwith %}{% endif %}
         {% endif %}
     </div>
 {% else %}
 {% include "_youtube_wizard.html" %}
 {% endif %}
-{% when None %}
+{% endwith %}{% else %}
 {% include "_youtube_wizard.html" %}
-{% endmatch %}
+{% endif %}
 
-{% endmatch %}
+{% endif %}
 
     <div class="v2-section-head">
         <div>
@@ -72,58 +69,54 @@
     <form method="post" action="/api/services/companion/egress" class="actions-row" style="margin-bottom: var(--space-3);">
         <label class="label" for="egress-companion" style="margin-right: var(--space-2);">invidious-companion</label>
         <select class="select" id="egress-companion" name="mode">
-            {% match egress_companion %}
-            {% when Some with (e) %}
+            {% if egress_companion is not none %}{% with e = egress_companion %}
                 <option value="proxy_chain"{% if e.mode == "proxy_chain" %} selected{% endif %}>proxy_chain — through Mullvad/BD</option>
                 <option value="direct"{% if e.mode == "direct" %} selected{% endif %}>direct — straight to YouTube</option>
-            {% when None %}
+            {% endwith %}{% else %}
                 <option value="proxy_chain" selected>proxy_chain — through Mullvad/BD</option>
                 <option value="direct">direct — straight to YouTube</option>
-            {% endmatch %}
+            {% endif %}
         </select>
         <button class="btn" type="submit">Save</button>
-        {% match egress_companion %}{% when Some with (e) %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at.format("%Y-%m-%d %H:%M:%S") }}{% match e.reason %}{% when Some with (r) %} — <em>{{ r }}</em>{% when None %}{% endmatch %}</span>{% when None %}{% endmatch %}
+        {% if egress_companion is not none %}{% with e = egress_companion %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at|strftime("%Y-%m-%d %H:%M:%S") }}{% if e.reason is not none %}{% with r = e.reason %} — <em>{{ r }}</em>{% endwith %}{% endif %}</span>{% endwith %}{% endif %}
     </form>
 
     <form method="post" action="/api/services/invidious/egress" class="actions-row">
         <label class="label" for="egress-invidious" style="margin-right: var(--space-2);">invidious itself</label>
         <select class="select" id="egress-invidious" name="mode">
-            {% match egress_invidious %}
-            {% when Some with (e) %}
+            {% if egress_invidious is not none %}{% with e = egress_invidious %}
                 <option value="proxy_chain"{% if e.mode == "proxy_chain" %} selected{% endif %}>proxy_chain — through Mullvad/BD</option>
                 <option value="direct"{% if e.mode == "direct" %} selected{% endif %}>direct — straight to YouTube</option>
-            {% when None %}
+            {% endwith %}{% else %}
                 <option value="proxy_chain" selected>proxy_chain — through Mullvad/BD</option>
                 <option value="direct">direct — straight to YouTube</option>
-            {% endmatch %}
+            {% endif %}
         </select>
         <button class="btn" type="submit">Save</button>
-        {% match egress_invidious %}{% when Some with (e) %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at.format("%Y-%m-%d %H:%M:%S") }}{% match e.reason %}{% when Some with (r) %} — <em>{{ r }}</em>{% when None %}{% endmatch %}</span>{% when None %}{% endmatch %}
+        {% if egress_invidious is not none %}{% with e = egress_invidious %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at|strftime("%Y-%m-%d %H:%M:%S") }}{% if e.reason is not none %}{% with r = e.reason %} — <em>{{ r }}</em>{% endwith %}{% endif %}</span>{% endwith %}{% endif %}
     </form>
 
     <details style="max-width: 720px; margin-top: var(--space-6);">
         <summary>Companion runtime status</summary>
-        {% match status %}
-        {% when Some with (s) %}
+        {% if status is not none %}{% with s = status %}
         <dl class="keyfacts">
             <dt>po-token / session ready</dt>
             <dd>{% if s.po_token_ready %}<span style="color: var(--color-success);">yes</span>{% else %}<span style="color: var(--color-danger-strong);">no</span>{% endif %}</dd>
             <dt>last attempt</dt>
-            <dd class="mono">{% match s.last_attempt_at %}{% when Some with (t) %}{{ t.format("%Y-%m-%d %H:%M:%S") }}{% when None %}—{% endmatch %}</dd>
+            <dd class="mono">{% if s.last_attempt_at is not none %}{% with t = s.last_attempt_at %}{{ t|strftime("%Y-%m-%d %H:%M:%S") }}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>last success</dt>
-            <dd class="mono">{% match s.last_success_at %}{% when Some with (t) %}{{ t.format("%Y-%m-%d %H:%M:%S") }}{% when None %}—{% endmatch %}</dd>
+            <dd class="mono">{% if s.last_success_at is not none %}{% with t = s.last_success_at %}{{ t|strftime("%Y-%m-%d %H:%M:%S") }}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>effective auth</dt>
-            <dd>{% match s.effective_method %}{% when Some with (m) %}<span class="mono">{{ m }}</span>{% when None %}—{% endmatch %}</dd>
-            {% match s.last_error %}
-            {% when Some with (err) %}
+            <dd>{% if s.effective_method is not none %}{% with m = s.effective_method %}<span class="mono">{{ m }}</span>{% endwith %}{% else %}—{% endif %}</dd>
+            {% if s.last_error is not none %}{% with err = s.last_error %}
             <dt>last error</dt>
             <dd style="color: var(--color-danger-strong);">{{ err }}</dd>
-            {% when None %}
-            {% endmatch %}
+            {% endwith %}{% else %}
+            {% endif %}
         </dl>
-        {% when None %}
+        {% endwith %}{% else %}
         <p class="muted">No status reported yet — companion writes here on first refresh after deploy.</p>
-        {% endmatch %}
+        {% endif %}
     </details>
 
     <details style="max-width: 720px;">
@@ -154,15 +147,14 @@
             <button class="btn btn--primary" type="submit">Save cookies</button>
         </form>
 
-        {% match auth %}
-        {% when Some with (_) %}
+        {% if auth is not none %}
         <h3 style="font-family: var(--font-serif); font-size: 16px; margin: var(--space-5) 0 var(--space-2); color: var(--color-danger-strong);">Clear authentication</h3>
         <p class="muted" style="font-family: var(--font-sans); font-size: 13px;">Goes back to no-auth state. /watch will stop working until you set something up again.</p>
         <form method="post" action="/api/youtube/auth/clear">
             <button class="btn btn--danger" type="submit">{% include "fragments/icons/trash.html" %} Clear all credentials</button>
         </form>
-        {% when None %}
-        {% endmatch %}
+        {% else %}
+        {% endif %}
     </details>
 </div>
 {% endblock %}

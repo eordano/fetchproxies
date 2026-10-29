@@ -1,0 +1,5 @@
+{% if s.state == "running" %}<span class="pill pill--info"><span class="pill__dot pill__dot--pulse"></span>running</span>
+{% elif s.state == "completed" %}<span class="pill pill--success"><span class="pill__dot"></span>completed</span>
+{% elif s.state == "failed" %}<span class="pill pill--danger"><span class="pill__dot"></span>failed</span>
+{% elif s.state == "partial" %}<span class="pill pill--warning"><span class="pill__dot"></span>partial</span>
+{% else %}<span class="pill pill--neutral"><span class="pill__dot"></span>{{ s.state }}</span>{% endif %}

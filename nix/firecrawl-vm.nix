@@ -87,6 +87,13 @@ in
           PROXY_SERVER = socksProxy;
           BLOCK_MEDIA = "true";
         };
+        # The pinned image contains dist/api.js and its dependencies, but its
+        # default `pnpm start` asks Corepack to download pnpm at runtime.
+        # Direct egress is blocked inside this VM, so start the built server.
+        cmd = [
+          "node"
+          "dist/api.js"
+        ];
         ports = lib.mkForce [ ];
         extraOptions = runtimeOpts;
       };

@@ -1,18 +1,17 @@
 <div class="proxy-summary">
     <div class="proxy-stat">
         <span class="label">Online</span>
-        <strong class="proxy-stat__num">{{ health.ok_count() }}<span class="muted">/{{ health.total() }}</span></strong>
+        <strong class="proxy-stat__num">{{ health|ok_count }}<span class="muted">/{{ health|total }}</span></strong>
         <span class="muted" style="font-family: var(--font-sans); font-size: 12px;">backends responding</span>
     </div>
     <div class="proxy-stat">
         <span class="label">Last probe</span>
         <strong class="proxy-stat__num mono" style="font-size: 18px; font-weight: 500;">
-            {{ health.checked_at_display() }}
+            {{ health|checked_at_display }}
         </strong>
-        {% match health.target_url %}
-        {% when Some with (u) %}<span class="muted" style="font-family: var(--font-sans); font-size: 12px;">via <span class="mono">{{ u }}</span></span>
-        {% when None %}<span class="muted" style="font-family: var(--font-sans); font-size: 12px;">no probe yet</span>
-        {% endmatch %}
+        {% if health.target_url is not none %}{% with u = health.target_url %}<span class="muted" style="font-family: var(--font-sans); font-size: 12px;">via <span class="mono">{{ u }}</span></span>
+        {% endwith %}{% else %}<span class="muted" style="font-family: var(--font-sans); font-size: 12px;">no probe yet</span>
+        {% endif %}
     </div>
     <div class="proxy-stat">
         <span class="label">Active chain</span>
@@ -23,7 +22,7 @@
     </div>
 </div>
 
-{% if health.backends.is_empty() %}
+{% if not health.backends %}
 <div class="empty">No health snapshot yet — waiting for the first proxy-probe run (boots ~60 s after VM start).</div>
 {% else %}
 <div class="proxy-table-wrap">
@@ -44,31 +43,31 @@
                 <td>
                     <div class="row gap-2">
                         <span class="mono proxy-backend">{{ b.name }}</span>
-                        {% if b.is_fallback() %}<span class="proxy-fallback">fallback</span>{% endif %}
+                        {% if b|is_fallback %}<span class="proxy-fallback">fallback</span>{% endif %}
                     </div>
                 </td>
-                <td class="mono muted">{{ b.port_display() }}</td>
+                <td class="mono muted">{{ b|port_display }}</td>
                 <td>
-                    {% if b.is_ok() %}
+                    {% if b|is_ok %}
                         <span class="pill pill--success"><span class="pill__dot"></span>ok</span>
-                    {% else if b.is_blocked() %}
+                    {% elif b|is_blocked %}
                         <span class="pill pill--danger"><span class="pill__dot"></span>blocked</span>
-                    {% else if b.is_timeout() %}
+                    {% elif b|is_timeout %}
                         <span class="pill pill--warning"><span class="pill__dot"></span>timeout</span>
                     {% else %}
                         <span class="pill pill--neutral"><span class="pill__dot"></span>{{ b.status }}</span>
                     {% endif %}
                 </td>
-                <td class="mono">{{ b.http_code_display() }}</td>
+                <td class="mono">{{ b|http_code_display }}</td>
                 <td>
                     <div class="proxy-lat">
                         <div class="proxy-lat__bar">
-                            <span class="proxy-lat__fill" style="width: {{ b.latency_pct(health.max_latency_ms()) }}%;"></span>
+                            <span class="proxy-lat__fill" style="width: {{ b|latency_pct(health|max_latency_ms) }}%;"></span>
                         </div>
-                        <span class="mono proxy-lat__num">{{ b.latency_display() }}</span>
+                        <span class="mono proxy-lat__num">{{ b|latency_display }}</span>
                     </div>
                 </td>
-                <td class="mono muted" style="font-size: 12.5px;">{{ b.checked_at_display() }}</td>
+                <td class="mono muted" style="font-size: 12.5px;">{{ b|checked_at_display }}</td>
             </tr>
         {% endfor %}
         </tbody>

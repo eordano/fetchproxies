@@ -20,17 +20,16 @@
     </div>
     <form method="post" action="/api/services/nitter/egress" class="actions-row">
         <select class="select" name="mode">
-            {% match egress %}
-            {% when Some with (e) %}
+            {% if egress is not none %}{% with e = egress %}
                 <option value="proxy_chain"{% if e.mode == "proxy_chain" %} selected{% endif %}>proxy_chain (mullvad/vpn-exit)</option>
                 <option value="direct"{% if e.mode == "direct" %} selected{% endif %}>direct (host WAN)</option>
-            {% when None %}
+            {% endwith %}{% else %}
                 <option value="proxy_chain" selected>proxy_chain (mullvad/vpn-exit)</option>
                 <option value="direct">direct (host WAN)</option>
-            {% endmatch %}
+            {% endif %}
         </select>
         <button class="btn" type="submit">Save</button>
-        {% match egress %}{% when Some with (e) %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at.format("%Y-%m-%d %H:%M:%S") }}{% match e.reason %}{% when Some with (r) %} — <em>{{ r }}</em>{% when None %}{% endmatch %}</span>{% when None %}{% endmatch %}
+        {% if egress is not none %}{% with e = egress %}<span class="muted" style="font-family: var(--font-sans); font-size: 13px;">last set {{ e.updated_at|strftime("%Y-%m-%d %H:%M:%S") }}{% if e.reason is not none %}{% with r = e.reason %} — <em>{{ r }}</em>{% endwith %}{% endif %}</span>{% endwith %}{% endif %}
     </form>
     <p class="field__hint" style="margin-top: var(--space-2);">Stored in DB, applied on next nitter restart. Per-service live restart is on the roadmap.</p>
 
@@ -39,29 +38,27 @@
             <h2 class="v2-section-head__title">Last mint</h2>
         </div>
     </div>
-    {% match status %}
-    {% when Some with (s) %}
+    {% if status is not none %}{% with s = status %}
     <div class="card" style="padding: var(--space-4); max-width: 720px;">
         <dl class="keyfacts">
             <dt>Last attempt</dt>
-            <dd class="mono">{% match s.last_attempt_at %}{% when Some with (t) %}{{ t.format("%Y-%m-%d %H:%M:%S") }}{% when None %}—{% endmatch %}</dd>
+            <dd class="mono">{% if s.last_attempt_at is not none %}{% with t = s.last_attempt_at %}{{ t|strftime("%Y-%m-%d %H:%M:%S") }}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>Last success</dt>
-            <dd class="mono">{% match s.last_success_at %}{% when Some with (t) %}{{ t.format("%Y-%m-%d %H:%M:%S") }}{% when None %}—{% endmatch %}</dd>
+            <dd class="mono">{% if s.last_success_at is not none %}{% with t = s.last_success_at %}{{ t|strftime("%Y-%m-%d %H:%M:%S") }}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>Source</dt>
-            <dd>{% match s.last_source %}{% when Some with (v) %}<span class="mono">{{ v }}</span>{% when None %}—{% endmatch %}</dd>
+            <dd>{% if s.last_source is not none %}{% with v = s.last_source %}<span class="mono">{{ v }}</span>{% endwith %}{% else %}—{% endif %}</dd>
             <dt>Updated</dt>
-            <dd class="mono muted">{{ s.updated_at.format("%Y-%m-%d %H:%M:%S") }}</dd>
-            {% match s.last_error %}
-            {% when Some with (err) %}
+            <dd class="mono muted">{{ s.updated_at|strftime("%Y-%m-%d %H:%M:%S") }}</dd>
+            {% if s.last_error is not none %}{% with err = s.last_error %}
             <dt>Last error</dt>
             <dd style="color: var(--color-danger-strong);">{{ err }}</dd>
-            {% when None %}
-            {% endmatch %}
+            {% endwith %}{% else %}
+            {% endif %}
         </dl>
     </div>
-    {% when None %}
+    {% endwith %}{% else %}
     <div class="empty">No mint attempts recorded — the timer fires every 24h or on a forced trigger.</div>
-    {% endmatch %}
+    {% endif %}
 
     <form method="post" action="/api/nitter/trigger" class="actions-row" style="margin-top: var(--space-4);">
         <button class="btn" type="submit">{% include "fragments/icons/refresh.html" %} Force mint now</button>
@@ -73,29 +70,28 @@
             <h2 class="v2-section-head__title">Credentials source</h2>
         </div>
     </div>
-    {% match override_row %}
-    {% when Some with (o) %}
+    {% if override_row is not none %}{% with o = override_row %}
     <div class="card" style="padding: var(--space-4); max-width: 720px; margin-bottom: var(--space-4);">
         <dl class="keyfacts">
             <dt>Decision</dt>
             <dd><span class="mono">{{ o.env_decision }}</span></dd>
             <dt>Username</dt>
-            <dd class="mono">{% match o.username %}{% when Some with (u) %}{{ u }}{% when None %}—{% endmatch %}</dd>
+            <dd class="mono">{% if o.username is not none %}{% with u = o.username %}{{ u }}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>Password</dt>
-            <dd class="muted">{% match o.password %}{% when Some with (p) %}{% if !p.is_empty() %}stored ({{ p.len() }} chars){% else %}—{% endif %}{% when None %}—{% endmatch %}</dd>
+            <dd class="muted">{% if o.password is not none %}{% with p = o.password %}{% if p %}stored ({{ p|length }} chars){% else %}—{% endif %}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>TOTP</dt>
-            <dd class="muted">{% match o.totp_secret %}{% when Some with (t) %}{% if !t.is_empty() %}stored{% else %}—{% endif %}{% when None %}—{% endmatch %}</dd>
+            <dd class="muted">{% if o.totp_secret is not none %}{% with t = o.totp_secret %}{% if t %}stored{% else %}—{% endif %}{% endwith %}{% else %}—{% endif %}</dd>
             <dt>Decided at</dt>
-            <dd class="mono muted">{{ o.decided_at.format("%Y-%m-%d %H:%M:%S") }}</dd>
+            <dd class="mono muted">{{ o.decided_at|strftime("%Y-%m-%d %H:%M:%S") }}</dd>
         </dl>
     </div>
     <form method="post" action="/api/nitter/override" style="margin-bottom: var(--space-5);">
         <input type="hidden" name="action" value="clear">
         <button class="btn btn--danger" type="submit">{% include "fragments/icons/trash.html" %} Clear override (fall back to agenix env)</button>
     </form>
-    {% when None %}
+    {% endwith %}{% else %}
     <p class="muted" style="font-family: var(--font-sans); font-size: 13px;">No dashboard override — mint reads <span class="mono">/var/lib/fp-secrets/nitter-session-login-env</span> (agenix-decrypted).</p>
-    {% endmatch %}
+    {% endif %}
 
     <details style="max-width: 720px;">
         <summary>Set / replace override</summary>
